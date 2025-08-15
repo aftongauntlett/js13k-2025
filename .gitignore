@@ -1,0 +1,12 @@
+# Development logs and documentation
+DEVLOG.md
+process-notes.md
+
+# System files
+.DS_Store
+.vscode/
+*.log
+
+# Temporary files
+temp/
+scratch/
