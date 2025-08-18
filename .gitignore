@@ -1,3 +1,14 @@
+# Build output
+dist/
+*.zip
+
+# Development files  
+*.backup
+test/
+
+# Node modules
+node_modules/
+
 # Development logs and documentation
 DEVLOG.md
 process-notes.md

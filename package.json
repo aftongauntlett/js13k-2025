@@ -1,0 +1,29 @@
+{
+  "name": "js13k-2025-firefly-cat",
+  "version": "1.0.0",
+  "description": "A magical firefly collection game for JS13K 2025",
+  "main": "dist/index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 8000",
+    "build": "npm run minify && npm run compress && npm run zip",
+    "minify": "terser main.js -c -m -o dist/main.min.js",
+    "roadroller": "roadroller dist/main.min.js -o dist/main.roadroller.js",
+    "inline": "node build/inline.js",
+    "compress": "npm run roadroller && npm run inline",
+    "zip": "cd dist && zip ../js13k-2025.zip index.html && cd .. && ls -la js13k-2025.zip && echo 'Zip size:' && wc -c js13k-2025.zip",
+    "size": "wc -c js13k-2025.zip && echo 'Limit: 13312 bytes'",
+    "test": "npm run build && npm run size"
+  },
+  "devDependencies": {
+    "terser": "^5.19.2",
+    "roadroller": "^2.1.0"
+  },
+  "keywords": [
+    "js13k",
+    "game",
+    "javascript",
+    "canvas"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

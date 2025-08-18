@@ -1,25 +1,67 @@
-// js13k-2025 Firefly Cat Game
+// js13k-2025 Firefly Cat Game - Optimized
 
-// Audio system
-let audioCtx;
-let playTone = (freq, dur, vol = 0.1) => {
-  if (!audioCtx || !audioEnabled) return;
-  try {
-    let osc = audioCtx.createOscillator();
-    let gain = audioCtx.createGain();
-    osc.frequency.value = freq;
-    osc.type = "sine";
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + dur);
-  } catch (e) {}
+// Lightweight audio system
+let a, // AudioContext
+e = 0; // audioEnabled (0=false, 1=true)
+
+// Initialize audio only when needed
+let I = () => {
+  if (!a) {
+    try {
+      a = new AudioContext();
+      e = 1;
+      if (a.state === 'suspended') {
+        a.resume().catch(err => console.warn('AudioContext resume failed:', err));
+      }
+    } catch (err) {
+      console.warn('AudioContext creation failed:', err);
+      return false;
+    }
+  }
+  return true;
 };
+
+// Simple tone generator - optimized with lazy initialization
+let T = (f, d = .2, v = .1, t = 'sine') => {
+  if (!audioEnabled || !I()) return; // Only initialize when actually playing
+  let o = a.createOscillator(),
+      g = a.createGain();
+  o.frequency.value = f;
+  o.type = t;
+  g.gain.value = v;
+  g.gain.exponentialRampToValueAtTime(.01, a.currentTime + d);
+  o.connect(g);
+  g.connect(a.destination);
+  o.start();
+  o.stop(a.currentTime + d);
+};
+
+// Game sounds - ultra compact
+let playFireflyPickup = () => T(800, .2, .1);
+let playDeliveryPurr = () => T(200, .5, .15);
+let playColorChange = () => T(1000, .1, .08);
+let playSummonChime = () => T(600, .15, .1);
+let playPenalty = () => T(150, .3, .1);
+
+// Legacy compatibility
+let initAudio = I;
+let audioCtx = null;
+let audioInitialized = false;
+let playColorWarning = playColorChange;
+let playTone = T;
+let playBackgroundNote = () => {};
+let startBackgroundMusic = () => {};
+let stopBackgroundMusic = () => {};
+let musicTimer = 0;
+let musicInterval = 0;
+let musicEnabled = false;
 
 const c = document.getElementById("c"),
   x = c.getContext("2d"),
-  TAU = Math.PI * 2;
+  TAU = Math.PI * 2,
+  M = Math, // Math shortcut
+  r = M.random, // Math.random shortcut
+  F = M.floor; // Math.floor shortcut
 
 let w,
   h,
@@ -41,15 +83,22 @@ let w,
   horizonBlades = [], // Pre-generated horizon grass blade data
   mouseInBounds = true,
   scoreTexts = [],
-  audioEnabled = true,
+  audioEnabled = true, // Lightweight audio system enabled
+  gamePaused = false,
+  windowFocused = true,
   gameOver = false,
+  gameStarted = false, // New state for story screen
   catEyeColor = "gold",
   catEyeChangeTimer = 0,
-  nextColorChangeTime = 480,
+  nextColorChangeTime = 360 + F(r() * 240), // Random 6-10 seconds initially
   stars = [],
   grassBlades = [],
   parallaxGrass = [],
-  startTime = null;
+  startTime = null,
+  lastWarningState = false,
+  totalCollected = 0,  // Total fireflies collected across all runs
+  totalLost = 0,       // Total fireflies lost across all runs
+  runStartTime = null; // Start time of current run
 
 function R() {
   w = innerWidth;
@@ -135,20 +184,6 @@ function initBackground() {
       });
     }
   });
-}
-
-// Audio initialization on first interaction
-let audioInitialized = false;
-function initAudio() {
-  if (!audioInitialized) {
-    audioInitialized = true;
-    try {
-      audioCtx = new AudioContext();
-      if (audioCtx.state === "suspended") {
-        audioCtx.resume();
-      }
-    } catch (e) {}
-  }
 }
 
 function drawBackground() {
@@ -292,6 +327,17 @@ function drawParallaxGrass(layer) {
 function updateCatEyes() {
   // Handle color changing timer for visual variety
   catEyeChangeTimer++;
+  
+  // Check for warning state and play warning sound when it starts
+  let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+  let isWarning = timeUntilChange <= 60;
+  
+  if (isWarning && !lastWarningState && otherFireflies.some(f => f.captured)) {
+    // Warning just started and player has fireflies - play warning sound
+    if (audioEnabled) playColorWarning();
+  }
+  lastWarningState = isWarning;
+  
   if (catEyeChangeTimer >= nextColorChangeTime) {
     // Penalize captured fireflies when color changes
     let capturedFireflies = otherFireflies.filter(f => f.captured);
@@ -301,8 +347,8 @@ function updateCatEyes() {
       // Show penalty text
       scoreTexts.push({
         text: `-${capturedFireflies.length}`,
-        x: w / 2,
-        y: h * 0.3,
+        x: mx, // Show penalty at player position, not cat
+        y: my - 50, // Above the player firefly
         life: 0,
         maxLife: 120,
         color: "#ff0000", // Red for penalty
@@ -311,6 +357,7 @@ function updateCatEyes() {
       // Force release all captured fireflies and stop charging
       charging = false; // Force player to drop fireflies
       glowPower = 0; // Reset glow power
+      totalLost += capturedFireflies.length; // Track total lost
       capturedFireflies.forEach(f => {
         f.captured = false;
         // Disperse them randomly
@@ -328,7 +375,7 @@ function updateCatEyes() {
         f.vy *= 0.98;
       });
       
-      if (audioEnabled) playTone(200, 0.3, 0.1); // Penalty sound
+      if (audioEnabled) playPenalty(capturedFireflies.length); // Penalty sound
     }
     
     // Change to a new random color for visual interest (no green)
@@ -340,18 +387,28 @@ function updateCatEyes() {
     
     catEyeColor = newColor;
     catEyeChangeTimer = 0;
+    lastWarningState = false; // Reset warning state for next cycle
     
-    // Progressive difficulty: intervals get shorter over time
+    // Random timing with a reasonable cap - never too fast, but unpredictable
     let gameTime = Date.now() - (startTime || Date.now());
-    let difficultyScale = Math.max(0.3, 1 - (gameTime / 60000)); // Gets harder over 1 minute
-    nextColorChangeTime = Math.floor(480 * difficultyScale); // Starts at 8s, goes down to 2.4s
+    let minTime = 240; // Minimum 4 seconds (capped so it never gets too fast)
+    let maxTime = 600; // Maximum 10 seconds
     
-    if (audioEnabled) playTone(300, 0.2, 0.08); // Color change sound
+    // Gradually reduce the maximum time but never below the minimum
+    let difficultyFactor = Math.min(0.7, gameTime / 120000); // Over 2 minutes
+    let adjustedMaxTime = Math.floor(maxTime - (maxTime - minTime - 60) * difficultyFactor);
+    
+    // Random time between min and adjusted max
+    nextColorChangeTime = minTime + Math.floor(Math.random() * (adjustedMaxTime - minTime));
+    
+    // REMOVED - was driving user mad
+    // if (audioEnabled) playColorChange(); // Color change sound
   }
 
   catEyes.forEach((eye) => {
     eye.blinkTimer++;
-    if (!eye.isBlinking && eye.blinkTimer > 600) {
+    // Increased blink interval to 1200 frames (20 seconds at 60fps) to make it less frequent
+    if (!eye.isBlinking && eye.blinkTimer > 1200) {
       eye.isBlinking = true;
       eye.blinkDuration = 10;
       eye.blinkTimer = 0;
@@ -376,9 +433,9 @@ function drawCatEyes() {
     let flashIntensity = 1;
     
     if (isWarning) {
-      // Flash effect - faster flashing as we get closer to change
+      // More subtle flash effect - reduced intensity range
       let flashSpeed = Math.max(0.3, timeUntilChange / 60); // Faster as time runs out
-      flashIntensity = 0.3 + 0.7 * (Math.sin(catEyeChangeTimer * (1 / flashSpeed)) * 0.5 + 0.5);
+      flashIntensity = 0.7 + 0.3 * (Math.sin(catEyeChangeTimer * (1 / flashSpeed)) * 0.5 + 0.5);
     }
 
     // Get color based on current cat eye color
@@ -699,10 +756,10 @@ function updateFireflies(fx, fy) {
         f.fadeIn = Math.min(1, f.fadeIn);
       }
 
-      // Normal floating behavior
+      // Normal floating behavior - increased movement for better visibility
       f.floatTimer += 0.08 + Math.random() * 0.04;
-      f.x += Math.sin(f.floatTimer) * 0.3;
-      f.y += Math.cos(f.floatTimer * 1.3) * 0.2;
+      f.x += Math.sin(f.floatTimer) * 0.8; // Increased from 0.3 to 0.8
+      f.y += Math.cos(f.floatTimer * 1.3) * 0.5; // Increased from 0.2 to 0.5
       f.flashTimer += 0.05 + Math.random() * 0.03;
       f.glowPhase += 0.1;
 
@@ -730,7 +787,7 @@ function updateFireflies(fx, fy) {
           f.captured = true;
           f.captureOffset.x = f.x - fx + (Math.random() - 0.5) * 20;
           f.captureOffset.y = f.y - fy + (Math.random() - 0.5) * 20;
-          if (audioEnabled) playTone(450, 0.1, 0.08);
+          if (audioEnabled) playFireflyPickup();
 
           // Capture particles
           for (let i = 0; i < 5; i++) {
@@ -769,6 +826,7 @@ function checkDeliveryZone(fx, fy) {
   if (dist < deliveryRadius && capturedFireflies.length > 0 && charging) {
     // Successful delivery - award points
     score += capturedFireflies.length;
+    totalCollected += capturedFireflies.length; // Track total collected
     
     // Show success text
     scoreTexts.push({
@@ -780,6 +838,25 @@ function checkDeliveryZone(fx, fy) {
       color: "#00ff00", // Green for success
     });
     
+    // Create flutter-away effect - fireflies transform to cat's color and float away
+    capturedFireflies.forEach((f, i) => {
+      for (let j = 0; j < 8; j++) { // More particles per firefly for magical effect
+        particles.push({
+          x: deliveryX + (r() - 0.5) * 40,
+          y: deliveryY + (r() - 0.5) * 20,
+          vx: (r() - 0.5) * 4,
+          vy: -1 - r() * 2, // Float upward
+          size: 2 + r() * 3,
+          life: 0,
+          maxLife: 60 + r() * 40,
+          color: catEyeColor, // Transform to cat's current color
+          alpha: 0.8,
+          glow: true,
+          flutterTimer: r() * TAU,
+        });
+      }
+    });
+    
     // Remove delivered fireflies
     otherFireflies = otherFireflies.filter(f => !f.captured);
     
@@ -788,7 +865,7 @@ function checkDeliveryZone(fx, fy) {
       spawnFirefly();
     }
     
-    if (audioEnabled) playTone(600, 0.2, 0.1); // Success sound
+    if (audioEnabled) playDeliveryPurr(capturedFireflies.length); // Success sound
   }
 }
 
@@ -810,11 +887,23 @@ function drawFireflies() {
 
     // Captured fireflies glow brighter and more consistently
     if (f.captured) {
-      glow = 0.8 + Math.sin(f.flashTimer * 2) * 0.2;
+      // Check if color change is imminent for erratic flashing
+      let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+      let isWarning = timeUntilChange <= 60;
+      
+      if (isWarning && timeUntilChange <= 30) {
+        // Very erratic flashing in final 30 frames (0.5 seconds)
+        glow = 0.3 + Math.abs(Math.sin(f.flashTimer * 8) * Math.cos(f.flashTimer * 5)) * 0.7;
+      } else if (isWarning) {
+        // Moderate erratic flashing in warning period
+        glow = 0.5 + Math.sin(f.flashTimer * 4) * Math.cos(f.flashTimer * 3) * 0.5;
+      } else {
+        // Normal captured glow
+        glow = 0.8 + Math.sin(f.flashTimer * 2) * 0.2;
+      }
     }
 
-    // Boost glow for better visibility
-    glow = Math.max(glow, 0.4); // Minimum glow level
+    // Allow fireflies to dim properly - removed artificial minimum
 
     if (glow > 0.3) {
       let size = 3 + glow * 4; // Larger glow size
@@ -925,13 +1014,16 @@ function drawPlayerFirefly(fx, fy) {
       baseR = 255; baseG = 221; baseB = 0;
   }
 
-  // Check if we're in the warning period and apply flash effect like cat eyes
+  // Check if we're in the warning period and apply erratic flash effect
   let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
   let isWarning = timeUntilChange <= 60;
   let flashIntensity = 1;
   
-  if (isWarning) {
-    // Same flash effect as cat eyes
+  if (isWarning && timeUntilChange <= 30) {
+    // Very erratic flashing in final 30 frames - player needs urgent warning!
+    flashIntensity = 0.4 + Math.abs(Math.sin(floatTimer * 12) * Math.cos(floatTimer * 8)) * 0.6;
+  } else if (isWarning) {
+    // Moderate erratic flashing in warning period
     let flashSpeed = Math.max(0.3, timeUntilChange / 60);
     flashIntensity = 0.3 + 0.7 * (Math.sin(catEyeChangeTimer * (1 / flashSpeed)) * 0.5 + 0.5);
   }
@@ -977,7 +1069,6 @@ c.onmousemove = (e) => {
   mx = e.clientX;
   my = e.clientY;
   mouseInBounds = true;
-  initAudio();
 };
 
 c.onmouseleave = () => {
@@ -989,6 +1080,12 @@ c.onmouseenter = () => {
 };
 
 c.onmousedown = (e) => {
+  // Start game from story screen
+  if (!gameStarted) {
+    gameStarted = true;
+    return;
+  }
+  
   let clickX = e.clientX;
   let clickY = e.clientY;
 
@@ -996,14 +1093,18 @@ c.onmousedown = (e) => {
   if (gameOver) {
     // Reset game state
     gameOver = false;
+    gameStarted = false; // Return to story screen
+    score = 0; // Reset score for new run
     glowPower = 0;
     charging = false;
     scoreTexts = [];
     otherFireflies = [];
     catEyeColor = "gold";
     catEyeChangeTimer = 0;
-    nextColorChangeTime = 480;
+    nextColorChangeTime = 360 + Math.floor(Math.random() * 240); // Random 6-10 seconds on restart
+    lastWarningState = false; // Reset warning state
     startTime = Date.now(); // Reset start time for difficulty scaling
+    runStartTime = Date.now(); // Reset run timer
     for (let i = 0; i < 20; i++) spawnFirefly(); // Increased from 10 to 20
     if (audioEnabled) playTone(600, 0.2, 0.1); // Restart sound
     return;
@@ -1025,7 +1126,10 @@ c.onmouseup = (e) => {
 
     if (d < 150) {
       quickFlashPower = 80;
-      if (audioEnabled) playTone(400, 0.3, 0.08);
+      if (audioEnabled) {
+        playTone(400, 0.3, 0.08);
+        playSummonChime(); // Add magical summoning sound
+      }
 
       // Summon fireflies on quick tap
       if (otherFireflies.length < 25) { // Increased from 15 to 25
@@ -1047,13 +1151,86 @@ c.onclick = (e) => {
 };
 
 document.onkeydown = (e) => {
-  initAudio();
-
+  // Start game from story screen
+  if (!gameStarted) {
+    gameStarted = true;
+    return;
+  }
+  
   // Handle mute toggle with M key
   if (e.code === "KeyM") {
     e.preventDefault();
     audioEnabled = !audioEnabled;
-    if (audioEnabled) playTone(600, 0.1, 0.1); // Confirmation sound
+    if (audioEnabled) {
+      startBackgroundMusic(); // Start background music when audio enabled
+      // Soft confirmation chime
+      zzfx(...[.2,,600,.01,.2,.3,1,1.2,,,,,,.08]); 
+    } else {
+      stopBackgroundMusic(); // Stop background music when audio disabled
+    }
+    return;
+  }
+
+  // Test audio with maximum volume (T key)
+  if (e.code === "KeyT") {
+    e.preventDefault();
+    console.log("TESTING AUDIO WITH MAXIMUM VOLUME");
+    if (audioEnabled && audioCtx && audioInitialized) {
+      // Generate a simple loud beep
+      let testData = zzfx(...[,,800,.1,.3,.3,1,0,,,,,,,1]);
+      console.log("Test audio data length:", testData.length);
+      zzfxP(testData, 2.0); // Double volume
+      
+      // Also try direct oscillator test
+      try {
+        let oscillator = audioCtx.createOscillator();
+        let gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.frequency.value = 440;
+        gainNode.gain.value = 0.3;
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.2);
+        console.log("Direct oscillator test played");
+      } catch (e) {
+        console.error("Direct oscillator test failed:", e);
+      }
+    } else {
+      console.log("Audio not ready:", { audioEnabled, audioCtx: !!audioCtx, audioInitialized });
+    }
+    return;
+  }
+
+  // Simple buffer test (Y key) - bypass zzfx entirely
+  if (e.code === "KeyY") {
+    e.preventDefault();
+    console.log("TESTING SIMPLE BUFFER AUDIO");
+    if (audioEnabled && audioCtx && audioInitialized) {
+      try {
+        // Create a simple sine wave manually
+        let sampleRate = 44100;
+        let duration = 0.2; // 200ms
+        let frequency = 800; // 800Hz
+        let samples = Math.floor(sampleRate * duration);
+        
+        let buffer = audioCtx.createBuffer(1, samples, sampleRate);
+        let channelData = buffer.getChannelData(0);
+        
+        // Generate simple sine wave
+        for (let i = 0; i < samples; i++) {
+          channelData[i] = Math.sin(2 * Math.PI * frequency * i / sampleRate) * 0.5;
+        }
+        
+        let source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start();
+        
+        console.log("Simple buffer test played - should hear 800Hz tone");
+      } catch (e) {
+        console.error("Simple buffer test failed:", e);
+      }
+    }
     return;
   }
 
@@ -1136,6 +1313,72 @@ function drawScoreTexts() {
 
 // UI System
 function drawUI() {
+  // Story opening screen
+  if (!gameStarted) {
+    // Semi-transparent dark overlay
+    x.fillStyle = "rgba(0,0,0,0.7)";
+    x.fillRect(0, 0, w, h);
+    
+    x.textAlign = "center";
+    x.fillStyle = "#ffffff";
+    
+    // Title
+    x.font = "32px serif";
+    x.fillText("The Cat & the Luminid", w / 2, h / 2 - 140);
+    
+    // Story text
+    x.font = "16px serif";
+    x.fillStyle = "#cccccc";
+    let storyLines = [
+      "On nights that never end, a Cat watches with eyes that shift like turning glass.",
+      "A Luminid drifts below, gathering fireflies that gleam in matching colors.",
+      "The Cat changes, the fireflies scatter, and the Luminid flickers —",
+      "whether in chase or escape, no one can say."
+    ];
+    
+    storyLines.forEach((line, i) => {
+      x.fillText(line, w / 2, h / 2 - 80 + i * 25);
+    });
+    
+    // Instructions
+    x.font = "14px serif";
+    x.fillStyle = "#999999";
+    x.fillText("(Move with your mouse. Glow with space or click. Gather, match, deliver… before the Cat's eyes change again.)", w / 2, h / 2 + 40);
+    
+    // Separator
+    x.fillStyle = "#666666";
+    x.fillText("⸻", w / 2, h / 2 + 70);
+    
+    // Start prompt
+    x.font = "18px serif";
+    x.fillStyle = "#ffffff";
+    x.fillText("Click or press any key to begin", w / 2, h / 2 + 100);
+    
+    x.textAlign = "left";
+    return;
+  }
+  
+  // Current score display (top right)
+  x.font = "16px monospace";
+  x.fillStyle = "#ffffff";
+  x.textAlign = "right";
+  x.fillText(`Score: ${score}`, w - 20, 30);
+  
+  // Statistics display (top right, below score)
+  x.font = "12px monospace";
+  x.fillStyle = "#aaaaaa";
+  x.fillText(`Total: ${totalCollected} | Lost: ${totalLost}`, w - 20, 50);
+  
+  // Run timer (top right, below stats)
+  if (runStartTime) {
+    let runTime = Math.floor((Date.now() - runStartTime) / 1000);
+    let minutes = Math.floor(runTime / 60);
+    let seconds = runTime % 60;
+    x.fillText(`${minutes}:${seconds.toString().padStart(2, '0')}`, w - 20, 70);
+  }
+  
+  x.textAlign = "left"; // Reset text alignment
+  
   // Audio status display
   x.font = "12px monospace";
   let audioText = audioEnabled ? "M: Unmute" : "M: Mute";
@@ -1153,13 +1396,25 @@ function drawUI() {
     x.fillStyle = "#ffffff";
     x.font = "36px monospace";
     x.textAlign = "center";
-    x.fillText("GAME OVER!", w / 2, h / 2 - 60);
+    x.fillText("GAME OVER!", w / 2, h / 2 - 80);
 
     x.font = "24px monospace";
-    x.fillText(`Final Score: ${score}`, w / 2, h / 2 - 20);
-
+    x.fillText(`Final Score: ${score}`, w / 2, h / 2 - 40);
+    
     x.font = "16px monospace";
-    x.fillText("Click to restart", w / 2, h / 2 + 20);
+    x.fillStyle = "#aaaaaa";
+    x.fillText(`Total Collected: ${totalCollected}`, w / 2, h / 2 - 10);
+    x.fillText(`Total Lost: ${totalLost}`, w / 2, h / 2 + 10);
+    
+    if (runStartTime) {
+      let runTime = Math.floor((Date.now() - runStartTime) / 1000);
+      let minutes = Math.floor(runTime / 60);
+      let seconds = runTime % 60;
+      x.fillText(`Run Time: ${minutes}:${seconds.toString().padStart(2, '0')}`, w / 2, h / 2 + 30);
+    }
+
+    x.fillStyle = "#ffffff";
+    x.fillText("Click to restart", w / 2, h / 2 + 60);
 
     x.textAlign = "left";
   }
@@ -1172,7 +1427,24 @@ function L() {
   drawHorizonGrass(); // Draw tall grass blades in front of cat eyes
   drawGrass();
 
+  if (!gameStarted) {
+    // Only draw UI (story screen) when game hasn't started
+    drawUI();
+    requestAnimationFrame(L);
+    return;
+  }
+
   floatTimer += 0.1;
+
+  // Background music timer
+  if (musicEnabled) {
+    musicTimer++;
+    if (musicTimer >= musicInterval) {
+      playBackgroundNote();
+      musicTimer = 0;
+      musicInterval = 300 + Math.random() * 600; // Random 5-15 second intervals
+    }
+  }
 
   // Handle mouse out of bounds - drift toward center
   if (!mouseInBounds) {
@@ -1224,9 +1496,20 @@ function L() {
   requestAnimationFrame(L);
 }
 
+// Window focus/blur handling - stop sounds when in other apps
+window.addEventListener('blur', () => {
+  windowFocused = false;
+});
+
+window.addEventListener('focus', () => {
+  windowFocused = true;
+});
+
 // Initialize
 window.onresize = R;
 R();
 startTime = Date.now(); // Initialize game start time
+runStartTime = Date.now(); // Initialize run start time for statistics
 for (let i = 0; i < 20; i++) spawnFirefly(); // Increased from 10 to 20
+
 L();
