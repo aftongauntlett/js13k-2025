@@ -1,18 +1,21 @@
-# ✨ The Luminid & The Cat ✨
+<h1 align="center">✨ The Luminid & The Cat ✨</h1>
+<p align="center"><em>
+Soft wings flutter, the meadow’s alive,<br>
+The Luminid gathers what dares to survive.<br>
+But above in the black, a grin splits the sky -<br>
+The Cat only watches… and never says why.
+</em></p>
 
+## Game Overview
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![js13k](https://img.shields.io/badge/js13k-2025-orange.svg)](https://js13kgames.com/)
 [![Size](https://img.shields.io/badge/size-<13KB-brightgreen.svg)](#)
 
-> The Luminid gathered fireflies whose glow matched the Cat's eyes; the Cat's eyes, in turn, changed as if to test the Luminid's wit. Was the Cat setting the challenge, or was it following the Luminid's lead? Neither seemed certain, and neither seemed to mind. All that was known, and only at night, was that the two would meet again, and the colors would change, and the game would go on until the moon grew tired of watching.
+You are the Luminid, a wanderer of nightlight. Drift through the dark meadow, where fireflies shimmer with the same hue as The Cat’s ever-watchful eyes. Draw them close with your glow, then offer them to The Cat above to renew your fading mana.
 
-## Game Overview
+But be wary - when The Cat’s gaze begins to change, the bond with your gathered fireflies grows fragile. A single shift could scatter them back to the shadows. Call upon your shield to protect what you’ve gathered, or summon new fireflies from the night itself, at the cost of your own mana.
 
-You are the Luminid, a wanderer of nightlight. Drift through the dark meadow, where fireflies shimmer with the same hue as the Cat’s ever-watchful eyes. Draw them close with your glow, then offer them to the Cat above to renew your fading mana.
-
-But be wary - when the Cat’s gaze begins to change, the bond with your gathered fireflies grows fragile. A single shift could scatter them back to the shadows. Call upon your shield to protect what you’ve gathered, or summon new fireflies from the night itself, at the cost of your own mana.
-
-The challenge is endless, as long as the Cat watches and the fireflies answer.
+The challenge is endless, as long as The Cat watches and the fireflies answer.
 
 ## Controls
 

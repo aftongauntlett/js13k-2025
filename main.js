@@ -1,10 +1,9 @@
-// js13k-2025 Firefly Cat Game - Optimized
+// js13k-2025 Firefly Cat Game
 
-// Lightweight audio system
 let a; // AudioContext
 
 // Game state and utility functions
-let getDifficulty = () => F(score / 50); // Consolidated difficulty scaling
+let getDifficulty = () => F(score / 50);
 let getSpeedMultiplier = () => 1 + (score / 200);
 let getRequiredFireflies = () => Math.max(1, F(score / 100) + 1);
 let addScoreText = (text, x, y, color = "#ffffff", life = 120) => {
@@ -18,10 +17,10 @@ let addMana = (amount) => { manaEnergy = Math.min(100, manaEnergy + amount); };
 let clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
 // Distance calculation helpers
-const hyp = (dx,dy)=>Math.hypot(dx,dy); // Use when you need actual distance
-const d2 = (ax,ay,bx,by)=>{ax-=bx; ay-=by; return ax*ax+ay*ay}; // Use for radius checks
+const hyp = (dx,dy)=>Math.hypot(dx,dy); // Actual distance
+const d2 = (ax,ay,bx,by)=>{ax-=bx; ay-=by; return ax*ax+ay*ay}; // Squared distance for radius checks
 
-// Initialize audio only when needed
+// Audio initialization
 let I = () => {
   if (!a) {
     try {
@@ -34,7 +33,7 @@ let I = () => {
   return true;
 };
 
-// Simple tone generator
+// Tone generator
 let T = (f, d = .2, v = .1) => {
   if (!audioEnabled || !I()) return;
   let o = a.createOscillator(), g = a.createGain();
@@ -81,20 +80,20 @@ const YELLOW = (a) => RGBA(255, 255, 0, a);
 const RED = (a) => RGBA(255, 0, 0, a);
 const BLUE = (a) => RGBA(150, 200, 255, a);
 
-// Sparkle color table [fillColor, shadowColor]
+// Sparkle colors [fillColor, shadowColor]
 const SPK = [['255,255,136','#ffff88'], ['255,255,255','white']];
 
-// Input hold helper - 150ms threshold for shield activation
+// Input hold helper for shield activation
 const held150 = (now) => (mousePressed && now - mouseDownTime >= 150) || (spacePressed && now - spaceDownTime >= 150);
 
-// Configuration constants for tuning behavior
+// Game configuration
 const CFG = {
-  warnFrames: 180,     // 3-second warning period (180 frames at 60fps)
-  flash1: 60,          // Flash 1 timing (0-60)
-  flash2: 120,         // Flash 2 timing (60-120) 
-  flash3: 150,         // Flash 3 timing (120-150)
-  shieldCooldown: 180, // 3-second shield cooldown
-  deliveryRadius: 120, // Cat nose proximity detection (squared: 120*120)
+  warnFrames: 180,     // Warning period (3 seconds)
+  flash1: 60,          // Flash timings
+  flash2: 120,         
+  flash3: 150,         
+  shieldCooldown: 180, // Shield cooldown (3 seconds)
+  deliveryRadius: 120, // Cat nose proximity detection
 };
 
 // Firefly rendering helpers
@@ -245,8 +244,15 @@ let w,
   totalCollected = 0,  // Total fireflies collected across all runs
   totalLost = 0,       // Total fireflies lost across all runs
   runStartTime = null, // Start time of current run
+  totalPauseTime = 0,  // Total time spent in pause/help menu
+  pauseStartTime = null, // When the current pause started
+  finalGameTime = null, // Final time when game ended (for game over display)
   colorChangesEnabled = true, // Enable eye color changes immediately
   collectedCount = 0,  // Count collected fireflies
+  
+  // Game over countdown system
+  gameOverCountdown = 0, // Frames remaining (300 = 5 seconds at 60fps)
+  gameOverTriggered = false, // Whether countdown has started
   summonHeat = 0, // Heat buildup from summoning (0-100)
   summonOverheated = false, // Whether system is overheated
   overheatCooldown = 0, // Frames until overheating ends
@@ -359,7 +365,7 @@ function updateCatEyes(now) {
   
   // Check for warning state and play warning sound when it starts
   let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
-  let isWarning = timeUntilChange <= CFG.warnFrames; // Extended warning period (3 seconds for Mario Kart-style countdown)
+  let isWarning = timeUntilChange <= CFG.warnFrames; // 3-second countdown period
   
   if (isWarning && !lastWarningState && otherFireflies.some(f => f.captured)) {
     // Warning just started and player has fireflies - play warning sound
@@ -368,34 +374,34 @@ function updateCatEyes(now) {
   lastWarningState = isWarning;
   
   if (catEyeChangeTimer >= nextColorChangeTime) {
-    // Check if shield is active OR was recently active (forgiving window)
+    // Check for active or recently active shield
     let recentShieldUse = now - (lastShieldTime || 0) < 2000; // 2 second grace window
     let capturedFireflies = otherFireflies.filter(f => f.captured);
     
     if (shieldActive || recentShieldUse) {
-      // Calculate timing quality based on Mario Kart-style 3-flash countdown
+      // Calculate shield timing quality
       let framesUntilChange = nextColorChangeTime - catEyeChangeTimer;
-      let warningPhase = CFG.warnFrames - framesUntilChange; // How far into the 3-second warning we are
+      let warningPhase = CFG.warnFrames - framesUntilChange; // Progress into warning period
       
       let protectionRate;
       let timingQuality;
       
-      // Perfect timing: shield activated during flash 2 (frames 60-120 of warning)
+      // Perfect timing: flash 2 (frames 60-120)
       if (warningPhase >= CFG.flash1 && warningPhase <= CFG.flash2) {
         protectionRate = 1.0; // 100% protection - Mario Kart style perfect timing!
         timingQuality = "PERFECT";
       } 
-      // Great timing: shield activated during flash 1 or early flash 3 (frames 0-60 or 120-150)
+      // Great timing: flash 1 or early flash 3 (frames 0-60 or 120-150)
       else if ((warningPhase >= 0 && warningPhase <= CFG.flash1) || (warningPhase >= CFG.flash2 && warningPhase <= CFG.flash3)) {
         protectionRate = 0.85; // 85% protection  
         timingQuality = "GREAT";
       } 
-      // Good timing: shield activated during late flash 3 or just before change (frames 150-180)
+      // Good timing: late flash 3 or pre-change (frames 150-180)
       else if (warningPhase >= CFG.flash3 && warningPhase <= CFG.warnFrames) {
         protectionRate = 0.7; // 70% protection
         timingQuality = "GOOD";
       } 
-      // Late timing: shield activated too early (before warning) or after change
+      // Late timing: too early or too late
       else {
         protectionRate = 0.5; // 50% protection
         timingQuality = "LATE";
@@ -470,9 +476,8 @@ function updateCatEyes(now) {
           }
         });
         
-        // Remove some of the lost fireflies to prevent accumulation
         // Keep a reasonable population but remove some to prevent lag
-        let firefliesKept = F(capturedFireflies.length * 0.5); // Keep 50% of lost fireflies
+        let firefliesKept = F(capturedFireflies.length * 0.5); 
         let firefliesRemoved = capturedFireflies.length - firefliesKept;
         
         // Remove the fireflies that are truly lost
@@ -539,7 +544,7 @@ function updateCatEyes(now) {
 
   catEyes.forEach((eye) => {
     eye.blinkTimer++;
-    // Increased blink interval to 1200 frames (20 seconds at 60fps) to make it less frequent
+    // 20-second blink interval
     if (!eye.isBlinking && eye.blinkTimer > 1200) {
       eye.isBlinking = true;
       eye.blinkDuration = 10;
@@ -554,7 +559,6 @@ function updateCatEyes(now) {
 }
 
 // Optimized whisker drawing function
-// dir: -1 (left) or 1 (right), eyeX/eyeY: eye center, twitch: whiskerTwitch, now: cached time
 function drawWhiskers(dir, eyeX, eyeY, twitch, now) {
   const baseX = eyeX + dir * 130;
   
@@ -613,9 +617,9 @@ function drawCatEyes(now) {
     let dy = my - noseY;
     let distSq = dx*dx + dy*dy;
     catProximity = Math.max(0, 1 - hyp(dx, dy) / 150); // 0-1 based on distance
-    mouseNearCat = distSq < CFG.deliveryRadius*CFG.deliveryRadius; // Use squared distance for comparison
+    mouseNearCat = distSq < CFG.deliveryRadius*CFG.deliveryRadius;
 
-    // Check if we're in the warning period (last 2 seconds = 120 frames)
+    // Warning period detection (final 2 seconds)
     let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
     let isWarning = timeUntilChange <= 120;
     let flashIntensity = 1;
@@ -695,12 +699,12 @@ function drawCatEyes(now) {
       x.restore();
     }
 
-    // Cat nose and whiskers - OUTSIDE the blinking check so they stay visible
-    // Cat nose - triangle with point at bottom, enhanced with proximity only
+    // Cat nose and whiskers - always visible
+    // Cat nose with proximity glow
     let noseAlpha = 0.4;
     let noseGlow = 0;
     
-    // Make nose glow based on mouse proximity only (not captured fireflies)
+    // Nose glow based on mouse proximity
     if (mouseNearCat) {
       let proximityTwinkle = sin(now * 0.015) * 0.5 + 0.5; // Gentle breathing effect
       noseAlpha = 0.4 + (catProximity * 0.6) + (proximityTwinkle * catProximity * 0.3); // Enhanced with mouse proximity
@@ -727,8 +731,7 @@ function drawCatEyes(now) {
     // Reset shadow
     x.shadowBlur = 0;
 
-    // Cat whiskers - enhanced with mouse proximity effects
-    // Create gentle breathing effect for whiskers + mouse proximity enhancement
+    // Breathing whiskers with proximity enhancement
     let whiskerBreathing = sin(now * 0.002) * 0.5 + 0.5; // Slow, breathing-like
     let proximityEffect = catProximity * 0.6; // Extra glow when mouse is near
     let whiskerAlpha = 0.3 + (whiskerBreathing * 0.4) + proximityEffect; // Enhanced with proximity
@@ -753,7 +756,7 @@ function drawCatEyes(now) {
 
     // Reset shadow effects and alpha
     setBlur(0, '');
-    x.globalAlpha = 1; // Reset alpha
+    x.globalAlpha = 1;
   }
 }
 
@@ -846,7 +849,6 @@ function updateClickEffects() {
   if (shieldCooldown > 0) {
     shieldCooldown--;
   }
-  // Removed automatic energy recovery - only refills when delivering fireflies
   
   if (shieldActive) {
     manaEnergy -= 1; // Slower drain while active for longer shield duration
@@ -871,15 +873,6 @@ function drawClickEffects() {
   });
   
   setBlur(0, ''); // Reset blur after sparkles
-  
-  // Help icon in top-right corner (moved since we removed mana bar)
-  if (gameStarted && !gameOver) {
-    setFill(WHITE(0.5));
-    x.font = "14px serif";
-    x.fillText("?", w - 30, 25);
-    x.font = "10px monospace";
-    x.fillText("R", w - 30, 35);
-  }
 }
 
 function updateFireflies(fx, fy) {
@@ -1177,7 +1170,7 @@ function checkDeliveryZone(fx, fy) {
   let dy = fy - noseY;
   let distSq = dx*dx + dy*dy;
   
-  // Check if player is in nose delivery zone with captured fireflies
+  // Check if player is in delivery zone with captured fireflies
   let requiredFireflies = getRequiredFireflies(); // Need more fireflies as score increases
   if (distSq < noseRadius*noseRadius && capturedFireflies.length >= requiredFireflies) {
     // Successful delivery - award points based on progressive difficulty
@@ -1261,8 +1254,8 @@ function checkDeliveryZone(fx, fy) {
         glow: 0.8 + r() * 0.4
       });
       
-      // Create fewer flutter particles since we have the orbital effect
-      for (let j = 0; j < 4; j++) { // Reduced from 8
+      // Reduced flutter particles (orbital effect provides main visual)
+      for (let j = 0; j < 4; j++) {
         particles.push({
           x: f.x + (r() - 0.5) * 20,
           y: f.y + (r() - 0.5) * 10,
@@ -1575,9 +1568,9 @@ c.onmouseenter = () => {
 c.onmousedown = (e) => {
   // Check for restart click when game over
   if (gameOver) {
-    // Reset game state
+    // Reset all game state for new run
     gameOver = false;
-    score = 0; // Reset score for new run
+    score = 0;
     glowPower = 0;
     charging = false;
     mouseMoving = false;
@@ -1585,14 +1578,14 @@ c.onmousedown = (e) => {
     otherFireflies = [];
     catEyeColor = "gold";
     catEyeChangeTimer = 0;
-    nextColorChangeTime = 600 + F(r() * 300); // Random 10-15 seconds on restart (forgiving)
-    lastWarningState = false; // Reset warning state
-    summonHeat = 0; // Reset heat system
-    summonOverheated = false; // Reset overheat state
-    overheatCooldown = 0; // Reset overheat cooldown
-    overheatStunned = false; // Reset stun state
-    mouseNearCat = false; // Reset cat proximity
-    catProximity = 0; // Reset proximity value
+    nextColorChangeTime = 600 + F(r() * 300); // Random 10-15 seconds on restart
+    lastWarningState = false;
+    summonHeat = 0;
+    summonOverheated = false;
+    overheatCooldown = 0;
+    overheatStunned = false;
+    mouseNearCat = false;
+    catProximity = 0;
     
     // Reset tutorial state
     tutorialStep = 0;
@@ -1608,6 +1601,11 @@ c.onmousedown = (e) => {
     
     startTime = Date.now(); // Reset start time for difficulty scaling
     runStartTime = Date.now(); // Reset run timer
+    totalPauseTime = 0; // Reset pause tracking
+    pauseStartTime = null; // Reset pause tracking
+    gameOverCountdown = 0; // Reset countdown
+    gameOverTriggered = false; // Reset countdown trigger
+    finalGameTime = null; // Reset final time
     // Spawn starting fireflies (fewer for tutorial, more for experienced players)
     let spawnCount = tutorialComplete ? 20 : 8;
     for (let i = 0; i < spawnCount; i++) spawnFirefly();
@@ -1659,8 +1657,7 @@ c.onmouseup = (e) => {
 };
 
 c.onclick = (e) => {
-  // This event fires after mousedown/mouseup, so we don't need additional logic here
-  // The charging logic is already handled by mousedown/mouseup
+  // Handled by mousedown/mouseup events
 };
 
 document.onkeydown = (e) => {
@@ -1677,6 +1674,19 @@ document.onkeydown = (e) => {
   // Handle rules toggle with R key, and ESC to close
   if (e.code === "KeyR" || e.code === "Escape") {
     e.preventDefault();
+    
+    // Track pause time for timer
+    if (!showHelp) {
+      // Opening help menu - start pause timer
+      pauseStartTime = Date.now();
+    } else {
+      // Closing help menu - add to total pause time
+      if (pauseStartTime) {
+        totalPauseTime += Date.now() - pauseStartTime;
+        pauseStartTime = null;
+      }
+    }
+    
     showHelp = !showHelp;
     return;
   }
@@ -1834,9 +1844,10 @@ function drawUI() {
   x.textAlign = "right";
   x.fillText(`Score: ${score}`, w - 20, 30);
   
-  // Run timer (top right, below score) - moved up to avoid overcrowding
+  // Run timer (top right, below score) - pauses when help menu is open
   if (runStartTime) {
-    let runTime = F((Date.now() - runStartTime) / 1000);
+    let currentPauseTime = showHelp && pauseStartTime ? Date.now() - pauseStartTime : 0;
+    let runTime = F((Date.now() - runStartTime - totalPauseTime - currentPauseTime) / 1000);
     let minutes = F(runTime / 60);
     let seconds = runTime % 60;
     x.font = "14px monospace";
@@ -1860,45 +1871,74 @@ function drawUI() {
   x.fillStyle = "#88ccff";
   x.fillText(rulesText, 25 + x.measureText(audioText + " | ").width, h - 32);
 
-  // Game over screen
+  // Game over countdown display - Sonic-style number flash
+  if (gameOverTriggered && !gameOver) {
+    let secondsLeft = Math.ceil(gameOverCountdown / 60);
+    
+    // Flash effect - show number for first 40 frames of each second, hide for last 20
+    let frameInSecond = gameOverCountdown % 60;
+    if (frameInSecond > 20) {
+      x.textAlign = "center";
+      
+      // Large flashing number with glow effect
+      x.font = "bold 72px monospace";
+      x.shadowBlur = 20;
+      x.shadowColor = secondsLeft <= 2 ? "#ff0000" : "#ffaa00";
+      x.fillStyle = secondsLeft <= 2 ? "#ff4444" : "#ffcc00";
+      x.fillText(secondsLeft, w / 2, h / 2);
+      x.shadowBlur = 0; // Reset shadow
+      
+      x.textAlign = "left"; // Reset
+    }
+  }
+
+  // Game over screen - reusing help menu styling
   if (gameOver) {
-    x.fillStyle = "rgba(0,0,0,0.8)";
+    // Dark overlay (same as help menu)
+    x.fillStyle = "rgba(0,0,0,0.9)";
     x.fillRect(0, 0, w, h);
 
-    x.fillStyle = "#ffffff";
-    x.font = "36px monospace";
+    // Centered content with glow effect (same as help menu)
     x.textAlign = "center";
-    x.fillText("DAWN BREAKS", w / 2, h / 2 - 100);
-
+    
+    // Title with glow (same style as help menu)
+    x.font = "bold 36px serif";
+    x.shadowBlur = 20;
+    x.shadowColor = "rgba(200, 150, 100, 0.8)"; // Warmer color for dawn theme
+    x.fillStyle = "rgba(220, 180, 150, 1.0)";
+    x.fillText("The Twilight Fades & Dawn Awaits", w / 2, h / 2 - 140);
+    x.shadowBlur = 0;
+    
+    // Poetic subtitle
     x.font = "18px serif";
     x.fillStyle = "#cccccc";
-    x.fillText("The night you protected has ended", w / 2, h / 2 - 70);
-
-    x.font = "24px monospace";
+    x.fillText("The moon grows tired, its watch is through,", w / 2, h / 2 - 100);
+    x.fillText("The Cat and Luminid bid adieu.", w / 2, h / 2 - 80);
+    
+    // Stats section with same styling as help menu sections
+    x.font = "18px serif";
     x.fillStyle = "#ffffff";
-    x.fillText(`Final Score: ${score}`, w / 2, h / 2 - 40);
+    x.fillText(`Fireflies Offered: ${totalCollected}`, w / 2, h / 2 - 40);
+    x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, h / 2 - 20);
     
-    x.font = "16px monospace";
-    x.fillStyle = "#aaaaaa";
-    x.fillText(`Fireflies Sacrificed: ${totalCollected}`, w / 2, h / 2 - 10);
-    x.fillText(`Fireflies Lost to Dawn: ${totalLost}`, w / 2, h / 2 + 10);
-    
-    if (runStartTime) {
-      let runTime = F((Date.now() - runStartTime) / 1000);
-      let minutes = F(runTime / 60);
-      let seconds = runTime % 60;
-      x.fillText(`Night Survived: ${minutes}:${seconds.toString().padStart(2, '0')}`, w / 2, h / 2 + 30);
+    if (finalGameTime !== null) {
+      let minutes = F(finalGameTime / 60);
+      let seconds = finalGameTime % 60;
+      x.fillText(`Night Endured: ${minutes}:${seconds.toString().padStart(2, '0')}`, w / 2, h / 2);
     }
+    
+    // Closing poetry
+    x.font = "18px serif";
+    x.fillStyle = "#cccccc";
+    x.fillText("But night returns when the moon will rise,", w / 2, h / 2 + 40);
+    x.fillText("The Cat will open its golden eyes.", w / 2, h / 2 + 60);
 
-    x.font = "14px serif";
-    x.fillStyle = "#888888";
-    x.fillText("The Cat waits for another night...", w / 2, h / 2 + 55);
+    // Continue prompt (same style as help menu close instruction)
+    x.font = "16px serif";
+    x.fillStyle = "rgba(150, 150, 150, 0.9)";
+    x.fillText("Click to begin another night", w / 2, h / 2 + 100);
 
-    x.fillStyle = "#ffffff";
-    x.font = "16px monospace";
-    x.fillText("Click to begin a new night", w / 2, h / 2 + 80);
-
-    x.textAlign = "left";
+    x.textAlign = "left"; // Reset
   }
 }
 
@@ -2035,8 +2075,6 @@ function L() {
     return;
   }
 
-  // Main game logic only runs when help is not shown
-  // Handle mouse movement detection with extended grace period for trackpad users
   // Disable movement buffer when shield is active (simpler approach)
   let shouldDisableMovement = shieldActive;
   
@@ -2106,6 +2144,11 @@ function L() {
       shieldActive = false;
       shieldCooldown = 180 + getDifficulty() * 3.6; // Longer cooldown as score increases
     }
+    
+    // Subtle shield holding audio feedback - pulse every 30 frames (0.5 seconds)
+    if (now % 30 === 0) {
+      T(400, 0.05, 0.03); // Quiet, low-pitched pulse while shield is held
+    }
   }
   
   // Update shield cooldown
@@ -2113,13 +2156,80 @@ function L() {
     shieldCooldown--;
   }
   
-  // NO automatic mana regeneration - mana only comes from sacrificing fireflies!
-  // This makes resource management much more strategic
+  // Game over countdown system
+  let noFirefliesAvailable = otherFireflies.length === 0;
+  let cannotSummon = manaEnergy < 10;
+  
+  if (noFirefliesAvailable && cannotSummon && !gameOverTriggered && !gameOver) {
+    // Start the countdown
+    gameOverTriggered = true;
+    gameOverCountdown = 300; // 5 seconds at 60fps
+    
+    // 20% chance to spawn a salvation golden firefly during countdown
+    if (r() < 0.2) {
+      // Spawn golden firefly at random edge of screen
+      let edge = F(r() * 4); // 0=top, 1=right, 2=bottom, 3=left
+      let x, y;
+      switch(edge) {
+        case 0: x = r() * w; y = h * 0.25; break; // Top
+        case 1: x = w; y = h * 0.3 + r() * h * 0.4; break; // Right
+        case 2: x = r() * w; y = h; break; // Bottom
+        case 3: x = 0; y = h * 0.3 + r() * h * 0.4; break; // Left
+      }
+      
+      spawnFirefly(false, true); // Spawn golden firefly
+      otherFireflies[otherFireflies.length - 1].x = x;
+      otherFireflies[otherFireflies.length - 1].y = y;
+    }
+  }
+  
+  // Update countdown if active
+  if (gameOverTriggered && !gameOver) {
+    gameOverCountdown--;
+    
+    // Countdown beeps - Sonic drowning style with increasing stress
+    if (gameOverCountdown % 60 === 0 && gameOverCountdown > 0) {
+      let secondsLeft = gameOverCountdown / 60;
+      
+      if (secondsLeft <= 2) {
+        // Final seconds: rapid, high-pitched urgent beeps
+        T(1000, 0.15, 0.12);
+        setTimeout(() => T(1200, 0.1, 0.08), 100); // Double beep effect
+      } else if (secondsLeft <= 3) {
+        // Getting urgent: medium-high pitch
+        T(700, 0.12, 0.1);
+      } else {
+        // Early warning: lower, but tense
+        T(500, 0.1, 0.08);
+      }
+    }
+    
+    // Add subtle tension audio pulses between beeps for final 2 seconds
+    if (gameOverCountdown <= 120 && gameOverCountdown % 15 === 0) {
+      T(200, 0.05, 0.03); // Low rumble every 0.25 seconds
+    }
+    
+    // Check if player got saved (got mana back)
+    if (manaEnergy >= 10 || otherFireflies.length > 0) {
+      gameOverTriggered = false;
+      gameOverCountdown = 0;
+    }
+    
+    // Time's up - trigger game over
+    if (gameOverCountdown <= 0) {
+      gameOver = true;
+      
+      // Capture final time (excluding current pause if help is open)
+      let currentPauseTime = showHelp && pauseStartTime ? Date.now() - pauseStartTime : 0;
+      finalGameTime = F((Date.now() - runStartTime - totalPauseTime - currentPauseTime) / 1000);
+      
+      totalLost += otherFireflies.filter(f => f.captured).length; // Count any remaining captured fireflies as lost
+    }
+  }
   
   // Passive mana drain - slowly depletes to encourage active play
   if (manaEnergy > 0 && !shieldActive) {
     // Very slow drain: about 1 mana every 4 seconds (0.25 per second at 60fps)
-    // Gets slightly faster as score increases to add progressive pressure
     let passiveDrain = 0.004 + (score * 0.00001); // Base 0.004, increases very slowly with score
     manaEnergy = Math.max(0, manaEnergy - passiveDrain);
   }
@@ -2179,7 +2289,6 @@ function L() {
     let isWarning = timeUntilChange <= 180; // 3 seconds total warning (60 frames per flash)
     
     if (isWarning && otherFireflies.some(f => f.captured)) {
-      // Mario Kart style: 3 distinct flashes with perfect timing opportunity
       let flashNumber = F((180 - timeUntilChange) / 60); // 0, 1, or 2 (for flashes 1, 2, 3)
       let flashProgress = ((180 - timeUntilChange) % 60) / 60; // 0 to 1 within each flash
       
@@ -2206,9 +2315,6 @@ function L() {
 
   // Periodic cleanup to prevent memory leaks - run every 5 seconds
   if (now % 5000 < 50) {
-    // Only clean up arrays that actually need it, not fireflies!
-    // The firefly disappearing bug was caused by removing captured fireflies here
-    
     // Limit array sizes as a backup
     if (particles.length > 100) particles = particles.slice(-50);
     if (clickSparkles.length > 50) clickSparkles = clickSparkles.slice(-25);
@@ -2223,6 +2329,8 @@ window.onresize = R;
 R();
 startTime = Date.now(); // Initialize game start time
 runStartTime = Date.now(); // Initialize run start time for statistics
+totalPauseTime = 0; // Initialize pause tracking
+pauseStartTime = null; // Initialize pause tracking
 // Spawn initial fireflies (tutorial-aware)
 let initialFireflies = tutorialComplete ? 20 : 8;
 for (let i = 0; i < initialFireflies; i++) spawnFirefly();
