@@ -46,6 +46,202 @@ let T = (f, d = .2, v = .1) => {
   o.stop(a.currentTime + d);
 };
 
+// Background music system - magical ambient soundscape
+let musicNodes = [];
+let musicPlaying = false;
+let musicVolume = 0.03; // Very subtle background level
+
+// Create magical ambient background music
+let startMusic = () => {
+  if (!audioEnabled || !I() || musicPlaying) return;
+  musicPlaying = true;
+  musicNodes = [];
+  
+  // Flowing arpeggiated patterns - like Moonlight Sonata's triplets
+  let baseChord = [130.81, 164.81, 196.00, 246.94]; // C-E-G-B (Cmaj7)
+  let currentNote = 0;
+  let arpeggioPhraseStep = 0;
+  
+  // Main flowing arpeggio - continuous triplet pattern
+  let arpeggioTimer = setInterval(() => {
+    if (!musicPlaying || !audioEnabled) return;
+    
+    // Create flowing 8-note phrase that repeats and varies
+    let phrasePattern = [0, 2, 1, 3, 0, 2, 1, 2]; // Indices into baseChord
+    let noteIndex = phrasePattern[arpeggioPhraseStep % phrasePattern.length];
+    let freq = baseChord[noteIndex];
+    
+    // Gentle variation every few phrases
+    if (Math.random() < 0.1) {
+      freq *= (Math.random() < 0.5) ? 1.125 : 0.875; // Occasional 9th or 7th
+    }
+    
+    // Create harp-like flowing note
+    let arp = a.createOscillator();
+    let arpGain = a.createGain();
+    let arpFilter = a.createBiquadFilter();
+    
+    arp.type = 'triangle';
+    arp.frequency.value = freq;
+    
+    arpFilter.type = 'lowpass';
+    arpFilter.frequency.value = freq * 4;
+    arpFilter.Q.value = 1.2;
+    
+    // Smooth, overlapping envelope for flow
+    arpGain.gain.value = 0;
+    arpGain.gain.linearRampToValueAtTime(musicVolume * 0.15, a.currentTime + 0.05);
+    arpGain.gain.exponentialRampToValueAtTime(musicVolume * 0.08, a.currentTime + 0.4);
+    arpGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 1.2);
+    
+    arp.connect(arpFilter).connect(arpGain).connect(a.destination);
+    arp.start();
+    arp.stop(a.currentTime + 1.2);
+    
+    arpeggioPhraseStep++;
+    
+    // Change chord progression every 16 notes for harmonic movement
+    if (arpeggioPhraseStep % 16 === 0) {
+      let chordShift = [0, 2, 4, 5][Math.floor(arpeggioPhraseStep / 16) % 4]; // I-ii-iii-IV progression
+      baseChord = [130.81, 164.81, 196.00, 246.94].map(f => f * Math.pow(2, chordShift / 12));
+    }
+  }, 320); // Fast enough for flow, ~188 BPM triplets
+  
+  // Overlapping sustained strings - warm pad that breathes
+  let stringPhase = 0;
+  let stringTimer = setInterval(() => {
+    if (!musicPlaying || !audioEnabled) return;
+    
+    // Overlapping string chords that fade in and out smoothly
+    let chordFreqs = [
+      [130.81, 164.81, 196.00], // C major
+      [123.47, 155.56, 185.00], // B minor
+      [146.83, 184.99, 220.00], // D major
+      [138.59, 174.61, 207.65], // C# minor
+    ];
+    
+    let chord = chordFreqs[stringPhase % chordFreqs.length];
+    
+    chord.forEach((freq, i) => {
+      let string = a.createOscillator();
+      let stringGain = a.createGain();
+      let stringFilter = a.createBiquadFilter();
+      
+      string.type = 'sawtooth';
+      string.frequency.value = freq;
+      
+      stringFilter.type = 'lowpass';
+      stringFilter.frequency.value = freq * 2.5;
+      stringFilter.Q.value = 0.8;
+      
+      // Long, breathing envelope
+      stringGain.gain.value = 0;
+      stringGain.gain.linearRampToValueAtTime(musicVolume * (0.06 - i * 0.01), a.currentTime + 2);
+      stringGain.gain.linearRampToValueAtTime(musicVolume * (0.04 - i * 0.008), a.currentTime + 6);
+      stringGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 8);
+      
+      // Subtle vibrato for organic feel
+      let stringLfo = a.createOscillator();
+      let stringLfoGain = a.createGain();
+      stringLfo.frequency.value = 0.12 + i * 0.02;
+      stringLfoGain.gain.value = 0.6;
+      stringLfo.connect(stringLfoGain).connect(string.frequency);
+      stringLfo.start();
+      stringLfo.stop(a.currentTime + 8);
+      
+      string.connect(stringFilter).connect(stringGain).connect(a.destination);
+      string.start();
+      string.stop(a.currentTime + 8);
+    });
+    
+    stringPhase++;
+  }, 6000); // Slow chord changes for breathing
+  
+  // Melodic counter-line - like a gentle flute melody weaving through
+  let melodyPhrase = [261.63, 293.66, 329.63, 349.23, 392.00, 329.63, 293.66, 261.63]; // C-D-E-F-G-E-D-C
+  let melodyStep = 0;
+  let melodyTimer = setInterval(() => {
+    if (!musicPlaying || !audioEnabled) return;
+    
+    if (Math.random() < 0.7) { // Not every beat, for breathing
+      let freq = melodyPhrase[melodyStep % melodyPhrase.length];
+      
+      // Gentle variation
+      if (Math.random() < 0.15) {
+        freq *= 1.059; // Occasional sharp for interest
+      }
+      
+      let melody = a.createOscillator();
+      let melodyGain = a.createGain();
+      let melodyFilter = a.createBiquadFilter();
+      
+      melody.type = 'sine';
+      melody.frequency.value = freq;
+      
+      melodyFilter.type = 'bandpass';
+      melodyFilter.frequency.value = freq * 1.5;
+      melodyFilter.Q.value = 2;
+      
+      // Smooth, singing envelope
+      melodyGain.gain.value = 0;
+      melodyGain.gain.linearRampToValueAtTime(musicVolume * 0.08, a.currentTime + 0.1);
+      melodyGain.gain.linearRampToValueAtTime(musicVolume * 0.06, a.currentTime + 0.8);
+      melodyGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 2);
+      
+      melody.connect(melodyFilter).connect(melodyGain).connect(a.destination);
+      melody.start();
+      melody.stop(a.currentTime + 2);
+      
+      melodyStep++;
+    }
+  }, 960); // Slower than arpeggio for counterpoint
+  
+  // Subtle crystalline sparkles - rare, magical accents
+  let sparkleTimer = setInterval(() => {
+    if (!musicPlaying || !audioEnabled) return;
+    
+    if (Math.random() < 0.2) {
+      let sparkleFreq = [523.25, 659.25, 783.99, 1046.5][Math.floor(Math.random() * 4)];
+      
+      let sparkle = a.createOscillator();
+      let sparkleGain = a.createGain();
+      sparkle.type = 'sine';
+      sparkle.frequency.value = sparkleFreq;
+      
+      sparkleGain.gain.value = musicVolume * 0.03;
+      sparkleGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 3);
+      
+      sparkle.connect(sparkleGain).connect(a.destination);
+      sparkle.start();
+      sparkle.stop(a.currentTime + 3);
+    }
+  }, 4000);
+  
+  musicNodes.push({timer: arpeggioTimer}, {timer: stringTimer}, {timer: melodyTimer}, {timer: sparkleTimer});
+};
+
+let stopMusic = () => {
+  if (!musicPlaying) return;
+  musicPlaying = false;
+  
+  musicNodes.forEach(node => {
+    if (node.osc) node.osc.stop();
+    if (node.lfo) node.lfo.stop();
+    if (node.timer) clearInterval(node.timer);
+  });
+  musicNodes = [];
+};
+
+// Music volume control
+let setMusicVolume = (vol) => {
+  musicVolume = vol;
+  musicNodes.forEach(node => {
+    if (node.gain) {
+      node.gain.gain.value = musicVolume * (node.gain.gain.value / musicVolume);
+    }
+  });
+};
+
 const c = document.getElementById("c"),
   x = c.getContext("2d"),
   TAU = Math.PI * 2,
@@ -261,6 +457,9 @@ let w,
   firstDeliveryMade = false, // Track first successful delivery
   tutorialTimer = 0,    // Timer for tutorial animations
   showHelp = false,     // Help menu state
+  
+  // Page visibility tracking for music control
+  pageVisible = true;
   
   // Input state tracking  
   mousePressed = false, spacePressed = false,
@@ -1611,7 +1810,13 @@ c.onmousedown = (e) => {
     // Spawn starting fireflies (fewer for tutorial, more for experienced players)
     let spawnCount = tutorialComplete ? 20 : 8;
     for (let i = 0; i < spawnCount; i++) spawnFirefly();
-    if (audioEnabled) T(600, 0.2, 0.1); // Restart sound
+    if (audioEnabled) {
+      T(600, 0.2, 0.1); // Restart sound
+      // Start music after restart if conditions are met
+      if (!showHelp && pageVisible) {
+        setTimeout(startMusic, 200);
+      }
+    }
     return;
   }
 
@@ -1670,6 +1875,12 @@ document.onkeydown = (e) => {
     audioEnabled = !audioEnabled;
     if (audioEnabled) {
       T(600, 0.1, 0.08); // Soft confirmation chime
+      // Restart music if game is running and help is not shown
+      if (gameStarted && !showHelp && pageVisible) {
+        setTimeout(startMusic, 100);
+      }
+    } else {
+      stopMusic(); // Stop music when muting
     }
     return;
   }
@@ -1678,6 +1889,20 @@ document.onkeydown = (e) => {
   if (e.code === "KeyR" || e.code === "Escape") {
     e.preventDefault();
     showHelp = !showHelp;
+    
+    // Control music based on help menu state
+    if (showHelp) {
+      stopMusic(); // Stop music when help is shown
+    } else if (audioEnabled && gameStarted && pageVisible) {
+      setTimeout(startMusic, 100); // Restart music when help is closed
+    }
+    return;
+  }
+
+  // Debug: 'C' key to test countdown/game over view
+  if (e.code === "KeyC") {
+    e.preventDefault();
+    catEyeChangeTimer = nextColorChangeTime - 180; // Start warning period
     return;
   }
 
@@ -1845,7 +2070,9 @@ function drawUI() {
     x.fillText(`${minutes}:${seconds.toString().padStart(2, '0')}`, w - 20, 55);
   }
 
-  x.textAlign = "left"; // Reset text alignment  // Audio status and rules display
+  x.textAlign = "left"; // Reset text alignment
+  
+  // Audio status and rules display
   x.font = "12px monospace";
   let audioText = audioEnabled ? "M: Unmute" : "M: Mute";
   let rulesText = "R: Rules";
@@ -2221,6 +2448,33 @@ function L() {
 // Initialize
 window.onresize = R;
 R();
+
+// Page visibility detection for music control
+document.addEventListener('visibilitychange', () => {
+  pageVisible = !document.hidden;
+  if (pageVisible && gameStarted && !showHelp && audioEnabled) {
+    setTimeout(startMusic, 100); // Small delay to ensure audio context is ready
+  } else {
+    stopMusic();
+  }
+});
+
+// Start music when game begins (with user interaction)
+let firstInteraction = true;
+document.addEventListener('click', () => {
+  if (firstInteraction && audioEnabled && gameStarted && !showHelp) {
+    firstInteraction = false;
+    startMusic();
+  }
+});
+
+document.addEventListener('keydown', () => {
+  if (firstInteraction && audioEnabled && gameStarted && !showHelp) {
+    firstInteraction = false;
+    startMusic();
+  }
+});
+
 startTime = Date.now(); // Initialize game start time
 runStartTime = Date.now(); // Initialize run start time for statistics
 // Spawn initial fireflies (tutorial-aware)
