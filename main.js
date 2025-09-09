@@ -395,66 +395,96 @@ const drawCatEyes = (now) => {
   const eyeColor = colors.hex;
   const shadowColor = colors.hex + "ff";
 
-  // Mouse tracking for pupils
+  // Mouse tracking for pupils with better bounds checking
   const mouseDistX = mx - eyeX;
   const mouseDistY = my - eyeY;
-  const maxPupilMove = 12;
-  const pupilOffsetX = clamp(mouseDistX * 0.04, -maxPupilMove, maxPupilMove);
-  const pupilOffsetY = clamp(mouseDistY * 0.04, -maxPupilMove, maxPupilMove);
+  
+  // Calculate pupil dilation first for bounds checking
+  const basePupilWidth = 4;
+  const maxPupilWidth = 12;
+  const curiosityFactor = Math.min(score / 100, 1);
+  const pupilWidth = basePupilWidth + (maxPupilWidth - basePupilWidth) * curiosityFactor;
+  
+  // Reduce max movement based on eye size and pupil width to prevent overlap
+  // Eye is 85x28, so we need to account for pupil size and eye rotation
+  const maxPupilMove = Math.min(8, (85 - pupilWidth) / 2 - 5); // Leave 5px buffer
+  const pupilOffsetX = clamp(mouseDistX * 0.03, -maxPupilMove, maxPupilMove); // Reduced sensitivity
+  const pupilOffsetY = clamp(mouseDistY * 0.03, -maxPupilMove, maxPupilMove);
 
   if (!eye.isBlinking) {
-    // Apply flash intensity to the glow
+    // Create subtle, ethereal eye glow that blends with the night sky
+    const subtleGlow = 30 * flashIntensity;
+    const atmosphericGlow = 50 * flashIntensity;
+    
+    // Very subtle atmospheric glow - like distant stars
     x.shadowColor = shadowColor;
-    x.shadowBlur = 50 * flashIntensity;
+    x.shadowBlur = atmosphericGlow;
 
-    // Left eye - tilted oval
+    // Left eye - more elongated and mystical shape with better visibility
     x.save();
-    x.translate(eyeX - 100, eyeY);
+    x.translate(eyeX - 120, eyeY); // Wider spacing for larger cat face
     x.rotate(0.3);
-    x.fillStyle = eyeColor + F(215 * flashIntensity).toString(16).padStart(2, '0');
+    // Increased opacity for better visibility while keeping ethereal feel
+    x.fillStyle = eyeColor + F(90 * flashIntensity).toString(16).padStart(2, '0'); 
     x.beginPath();
-    x.ellipse(0, 0, 70, 30, 0, 0, TAU);
+    x.ellipse(0, 0, 85, 28, 0, 0, TAU); // Slightly larger eyes
     x.fill();
     x.restore();
 
-    // Right eye - tilted oval
+    // Subtle inner shimmer for left eye
     x.save();
-    x.translate(eyeX + 100, eyeY);
-    x.rotate(-0.3);
-    x.fillStyle = eyeColor + F(215 * flashIntensity).toString(16).padStart(2, '0');
+    x.translate(eyeX - 120, eyeY);
+    x.rotate(0.3);
+    x.shadowBlur = subtleGlow;
+    x.fillStyle = eyeColor + F(45 * flashIntensity).toString(16).padStart(2, '0'); // Bit more visible
     x.beginPath();
-    x.ellipse(0, 0, 70, 30, 0, 0, TAU);
+    x.ellipse(0, 0, 95, 33, 0, 0, TAU); // Soft outer glow
+    x.fill();
+    x.restore();
+
+    // Right eye - more elongated and mystical shape with better visibility
+    x.save();
+    x.translate(eyeX + 120, eyeY); // Wider spacing for larger cat face
+    x.rotate(-0.3);
+    x.fillStyle = eyeColor + F(90 * flashIntensity).toString(16).padStart(2, '0');
+    x.beginPath();
+    x.ellipse(0, 0, 85, 28, 0, 0, TAU); // Slightly larger eyes
+    x.fill();
+    x.restore();
+
+    // Subtle inner shimmer for right eye
+    x.save();
+    x.translate(eyeX + 120, eyeY);
+    x.rotate(-0.3);
+    x.shadowBlur = subtleGlow;
+    x.fillStyle = eyeColor + F(45 * flashIntensity).toString(16).padStart(2, '0'); // Bit more visible
+    x.beginPath();
+    x.ellipse(0, 0, 95, 33, 0, 0, TAU); // Soft outer glow
     x.fill();
     x.restore();
 
     x.shadowBlur = 0;
 
-    // Diamond pupils
-    x.fillStyle = "#000";
+    // Vertical slit pupils - using softer night sky color instead of harsh black
+    x.fillStyle = "#0a0a1a"; // Same as sky background for natural blending
+    
+    // Pupil width already calculated above for bounds checking
 
-    // Left pupil
+    // Left pupil - vertical slit with curiosity-based dilation and proper bounds
     x.save();
-    x.translate(eyeX - 100 + pupilOffsetX, eyeY + pupilOffsetY);
-    x.rotate(0.3);
+    x.translate(eyeX - 120 + pupilOffsetX, eyeY + pupilOffsetY);
+    x.rotate(0.3); // Match the eye rotation
     x.beginPath();
-    x.moveTo(0, -12);
-    x.lineTo(6, 0);
-    x.lineTo(0, 12);
-    x.lineTo(-6, 0);
-    x.closePath();
+    x.ellipse(0, 0, pupilWidth, 20, 0, 0, TAU); // Width changes with curiosity, height stays 20px
     x.fill();
     x.restore();
 
-    // Right pupil
+    // Right pupil - vertical slit with curiosity-based dilation and proper bounds
     x.save();
-    x.translate(eyeX + 100 + pupilOffsetX, eyeY + pupilOffsetY);
-    x.rotate(-0.3);
+    x.translate(eyeX + 120 + pupilOffsetX, eyeY + pupilOffsetY);
+    x.rotate(-0.3); // Match the eye rotation
     x.beginPath();
-    x.moveTo(0, -12);
-    x.lineTo(6, 0);
-    x.lineTo(0, 12);
-    x.lineTo(-6, 0);
-    x.closePath();
+    x.ellipse(0, 0, pupilWidth, 20, 0, 0, TAU); // Width changes with curiosity, height stays 20px
     x.fill();
     x.restore();
   }
