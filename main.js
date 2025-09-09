@@ -1826,16 +1826,22 @@ const handleKeyUp = (e) => {
     const holdDuration = Date.now() - spaceActivationTime;
     
     // If it was a quick tap (released before hold threshold)
-    if (holdDuration < HOLD_THRESHOLD && canShield() && manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated) {
-      activateShield(false); // false = tap action, play chime
-      // Quick shield burst for taps
-      setTimeout(() => {
-        if (shieldActive) {
-          shieldActive = false;
-          stopShieldHum();
-          shieldCooldown = 0; // No cooldown for taps
-        }
-      }, 100);
+    if (holdDuration < HOLD_THRESHOLD) {
+      // Check for summoning first, then shield - same logic as mouse click
+      if (canSummon()) {
+        summonFirefly();
+      } else if (canShield()) {
+        // Quick shield tap
+        activateShield(false); // false = tap action, play chime
+        // Quick shield burst for taps
+        setTimeout(() => {
+          if (shieldActive) {
+            shieldActive = false;
+            stopShieldHum();
+            shieldCooldown = 0; // No cooldown for taps
+          }
+        }, 100);
+      }
     }
     
     spacePressed = false;
@@ -2378,9 +2384,8 @@ const drawMainUI = () => {
   x.textAlign = "left";
   let leftY = 100; // Gap after streak
   
-  // Bioluminescence display (always show) - use cat eye colors for consistency
-  const catColors = getCatEyeColors();
-  setFill(catColors.hex);
+  // Bioluminescence display (always show) - use fixed cyan for readability
+  setFill("#00dddd"); // Cyan color for good contrast against dark sky
   x.font = "18px 'Poiret One', sans-serif";
   x.fillText(`Bioluminescence: ${Math.floor(manaEnergy)}`, 20, leftY);
   leftY += 25;
