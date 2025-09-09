@@ -142,6 +142,7 @@ let charging = false;
 let glowPower = 0, flashTimer = 0, quickFlashPower = 0;
 let manaEnergy = 100;
 let summonHeat = 0, summonOverheated = false, overheatStunned = false;
+let lastOverheatAttempt = 0; // Track when player tried to use abilities while overheated
 
 // Shield system
 let shieldActive = false, shieldCooldown = 0, lastShieldTime = 0;
@@ -175,6 +176,7 @@ let mouseNearCat = false, catProximity = 0;
 let tutorialComplete = localStorage.getItem('tutorialComplete') === 'true';
 let tutorialStep = 0, firstDeliveryMade = false, tutorialTimer = 0;
 let tutorialStep3Timer = 0; // Track time spent on step 3
+let tutorialStep4Timer = 0; // Track time spent on step 4
 let showHelp = false;
 let showTutorialElements = false; // Show ring and count during tutorial only
 
@@ -1102,13 +1104,6 @@ const deliverFireflies = (capturedFireflies) => {
       }
     }
   }
-  
-  // Complete tutorial after reaching final step and some basic progress
-  if (!tutorialComplete && tutorialStep >= 4 && (score >= 15 || totalCollected >= 3)) {
-    tutorialComplete = true;
-    localStorage.setItem('tutorialComplete', 'true');
-    addScoreText('Tutorial Complete! Good luck...', w / 2, h / 2 + 30, '#00ff00', 400);
-  }
 };
 
 // ===== PLAYER SYSTEM =====
@@ -1189,6 +1184,9 @@ const updatePlayer = (now) => {
     } else {
       // Drain mana while shield is active
       manaEnergy = Math.max(0, manaEnergy - 0.15); // Slightly faster drain
+      
+      // Add heat for sustained shield use (slower than summoning)
+      summonHeat += 0.5; // Gradual heat buildup for shield use
     }
   }
   
@@ -1711,6 +1709,17 @@ const handleKeyDown = (e) => {
     console.log("Tutorial mode forced on - step:", tutorialStep);
     return;
   }
+
+  // TODO: REMOVE - Testing shortcut to trigger win screen (W key)
+  if (e.code === "KeyW") {
+    e.preventDefault();
+    if (!gameOver && !gameWon) {
+      // Set start time to make it look like full night duration has passed
+      startTime = Date.now() - NIGHT_DURATION;
+      console.log("Win condition triggered - timer set to 0");
+    }
+    return;
+  }
   
   // Shield with spacebar
   if (e.code === "Space") {
@@ -1766,7 +1775,13 @@ const canSummon = () => !summonOverheated && manaEnergy >= 10;
 const canShield = () => manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated;
 
 const summonFirefly = () => {
-  if (!canSummon()) return;
+  if (!canSummon()) {
+    // Record attempt while overheated for UI feedback
+    if (summonOverheated) {
+      lastOverheatAttempt = Date.now();
+    }
+    return;
+  }
   
   // Add heat for summoning
   summonHeat += 25;
@@ -1817,6 +1832,12 @@ const summonFirefly = () => {
 };
 
 const activateShield = (isHoldAction = false) => {
+  if (summonOverheated) {
+    // Record attempt while overheated for UI feedback
+    lastOverheatAttempt = Date.now();
+    return;
+  }
+  
   shieldActive = true;
   lastShieldTime = Date.now();
   
@@ -1871,6 +1892,7 @@ const restartGame = () => {
   tutorialComplete = false; // Reset tutorial state so it runs again
   tutorialStep = 0;
   tutorialStep3Timer = 0; // Reset step 3 timer
+  tutorialStep4Timer = 0; // Reset step 4 timer
   firstDeliveryMade = false;
   showTutorialElements = true; // Show tutorial elements until first delivery
   
@@ -1913,8 +1935,12 @@ const drawTutorialGuidance = () => {
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Collect fireflies and lead them to The Cat in the Sky", w / 2, h - 100);
-      x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Move your mouse near fireflies to collect them", w / 2, h - 75);
+      
+      // Highlight "Move your mouse" in green
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.fillText("", w / 2, h - 75);
+      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
+      x.fillText("Move your mouse", w / 2, h - 75);
       
       // Show delivery zone ring around cat's mouth area
       const catX = w / 2;
@@ -1933,18 +1959,20 @@ const drawTutorialGuidance = () => {
       // Mana management - after first delivery
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Your mana is precious. Click to summon more fireflies", w / 2, h - 100);
-      x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Each summon costs mana. Only feeding the cat restores it", w / 2, h - 75);
+      x.fillText("Your mana is precious.", w / 2, h - 100);
+      
+      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
+      x.fillText("Click to summon more fireflies", w / 2, h - 75);
       break;
       
     case 2:
       // Shield mechanics - after summoning
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Now the cat grows restless. Hold SPACE when its eyes shift!", w / 2, h - 100);
-      x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Perfect timing protects everything... if you're skilled enough", w / 2, h - 75);
+      x.fillText("Now the cat grows restless.", w / 2, h - 100);
+      
+      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
+      x.fillText("Press and hold when its eyes shift!", w / 2, h - 75);
       break;
       
     case 3:
@@ -1952,16 +1980,16 @@ const drawTutorialGuidance = () => {
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Overuse your powers and they'll abandon you", w / 2, h - 100);
-      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Manage resources carefully. The night is long and unforgiving", w / 2, h - 75);
       break;
       
     case 4:
-      // Final warning before full gameplay
+      // Final warning before full gameplay - will auto-complete after 5 seconds
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Now... survive until dawn. If you can", w / 2, h - 100);
-      x.font = "20px 'Poiret One', sans-serif";
+      
+      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
       x.fillText("Press 'ESC' if you need reminding of the rules", w / 2, h - 75);
       break;
   }
@@ -2024,8 +2052,9 @@ const drawHelp = () => {
     "",
     "CONTROLS:",
     "- Move mouse to guide your luminid and collect fireflies",
-    "- Tap/hold SPACE or left mouse click to summon fireflies (costs mana)",
-    "- Hold SPACE or left mouse click to activate protective shield (costs mana)",
+    "- Tap to summon fireflies (costs mana)",
+    "- Press and hold to activate protective shield (costs mana)",
+    "- ESC for help menu • M to toggle audio",
     "",
     "OBJECTIVE:",
     "- Collect fireflies and deliver them to The Cat in the Sky",
@@ -2043,12 +2072,17 @@ const drawHelp = () => {
     "- Manage mana wisely - summoning and shields costs magic",
     "- Don't overheat your luminid from excessive magic use",
     "- Master perfect shield timing for maximum protection",
-    "- Watch for The Cat's eyes - it grows restless..."
+    "- Watch for The Cat's eyes - it grows restless...",
+    "",
+    "TESTING SHORTCUTS (DEV):",
+    "- C: Trigger game over",
+    "- T: Reset tutorial",
+    "- W: Trigger win condition"
   ];
   
   rules.forEach((rule, i) => {
     const y = 230 + i * 24;
-    if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
+    if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:" || rule === "TESTING SHORTCUTS (DEV):") {
       // Uppercase subtitles - teal glowy, centered
       x.textAlign = "center";
       setFill("#69e4de");
@@ -2087,20 +2121,36 @@ const drawHelp = () => {
   x.restore();
 };
 
-// Draw game over screen
+// Draw unified game over/victory screen
 const drawGameOverScreen = () => {
-  if (!gameOver) return;
+  if (!gameOver && !gameWon) return;
   
-  // Calculate survival time using frozen time from when game ended
-  const gameTime = gameOverTime ? (gameOverTime - (startTime || gameOverTime)) : 0;
-  const gameMinutes = Math.floor(gameTime / 60000);
-  const gameSeconds = Math.floor((gameTime % 60000) / 1000);
-  const timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
+  // Calculate survival time - use different logic for win vs loss
+  let gameTime, gameMinutes, gameSeconds, timeString;
+  if (gameWon) {
+    // Victory: full night duration
+    gameTime = NIGHT_DURATION;
+    gameMinutes = Math.floor(gameTime / 60000);
+    gameSeconds = Math.floor((gameTime % 60000) / 1000);
+    timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
+  } else {
+    // Game over: time survived until failure
+    gameTime = gameOverTime ? (gameOverTime - (startTime || gameOverTime)) : 0;
+    gameMinutes = Math.floor(gameTime / 60000);
+    gameSeconds = Math.floor((gameTime % 60000) / 1000);
+    timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
+  }
   
-  // Calculate efficiency score (deliveries per minute, with penalty for losses)
-  const survivalMinutes = Math.max(gameTime / 60000, 0.1); // Prevent division by zero
+  // Calculate scores and bonuses
+  const survivalMinutes = Math.max(gameTime / 60000, 0.1);
   const efficiencyScore = Math.floor((totalCollected * 60) / survivalMinutes);
   const lossRate = totalLost > 0 ? Math.floor((totalLost / Math.max(totalCollected, 1)) * 100) : 0;
+  
+  // Victory bonuses (only for wins)
+  const survivalBonus = gameWon ? 1000 : 0;
+  const perfectBonus = gameWon && totalLost === 0 ? 500 : 0;
+  const streakBonus = gameWon ? bestStreak * 50 : 0;
+  const finalScore = gameWon ? score + survivalBonus + perfectBonus + streakBonus : score;
   
   // Semi-transparent overlay
   setFill(BLACK(0.9));
@@ -2109,20 +2159,32 @@ const drawGameOverScreen = () => {
   x.save();
   x.textAlign = "center";
   
-  // Game Over title - dark red for theme
-  setFill("#cc4444");
-  x.font = "48px 'Griffy', cursive";
-  x.shadowColor = "#cc4444";
-  x.shadowBlur = 15;
-  x.fillText("The Light Fades", w / 2, h / 2 - 150);
+  // Dynamic title based on outcome - keep the clean red styling
+  if (gameWon) {
+    setFill("#44cc44"); // Green for victory
+    x.font = "48px 'Griffy', cursive";
+    x.shadowColor = "#44cc44";
+    x.shadowBlur = 15;
+    x.fillText("DAWN BREAKS!", w / 2, h / 2 - 150);
+  } else {
+    setFill("#cc4444"); // Red for game over
+    x.font = "48px 'Griffy', cursive";
+    x.shadowColor = "#cc4444";
+    x.shadowBlur = 15;
+    x.fillText("The Light Fades", w / 2, h / 2 - 150);
+  }
   x.shadowBlur = 0;
   
-  // Main stats section with proper spacing - muted colors
+  // Dynamic subtitle
   setFill("#cccccc");
   x.font = "20px 'Poiret One', sans-serif";
-  x.fillText("Your Journey:", w / 2, h / 2 - 100);
+  if (gameWon) {
+    x.fillText("You survived the night!", w / 2, h / 2 - 100);
+  } else {
+    x.fillText("Your Journey:", w / 2, h / 2 - 100);
+  }
   
-  // Stats with better spacing - subtle grays and muted colors
+  // Stats section - unified layout
   setFill("#aaaaaa");
   x.font = "20px 'Poiret One', sans-serif";
   x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, h / 2 - 65);
@@ -2134,31 +2196,65 @@ const drawGameOverScreen = () => {
     x.fillText(`Best Streak: ${bestStreak}x`, w / 2, h / 2 + 10);
   }
   
-  // Efficiency rating
-  let efficiencyRating = "Beginner";
-  if (efficiencyScore > 60) efficiencyRating = "Expert";
-  else if (efficiencyScore > 30) efficiencyRating = "Skilled";
-  else if (efficiencyScore > 15) efficiencyRating = "Apprentice";
+  // Score breakdown - show bonuses for victory, efficiency for loss
+  let currentY = h / 2 + 40;
   
-  setFill("#888888");
-  x.font = "20px 'Poiret One', sans-serif";
-  x.fillText(`Efficiency: ${efficiencyScore}/min (${efficiencyRating})`, w / 2, h / 2 + 35);
-  
-  // Single tip/feedback (choose most relevant)
-  setFill("#999999");
-  x.font = "20px 'Poiret One', sans-serif";
-  if (totalLost === 0 && totalCollected > 5) {
-    x.fillText("Perfect run - no fireflies lost!", w / 2, h / 2 + 65);
-  } else if (lossRate > 50) {
-    x.fillText("Tip: Use your shield to protect fireflies", w / 2, h / 2 + 65);
-  } else if (bestStreak >= 10) {
-    x.fillText("Impressive streak mastery!", w / 2, h / 2 + 65);
+  if (gameWon) {
+    // Victory: show score breakdown with bonuses
+    setFill("#888888");
+    x.font = "20px 'Poiret One', sans-serif";
+    x.fillText(`Base Score: ${score}`, w / 2, currentY);
+    currentY += 25;
+    
+    if (survivalBonus > 0) {
+      setFill("#88ff88");
+      x.fillText(`+ Night Survival: ${survivalBonus}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (perfectBonus > 0) {
+      setFill("#44ff44");
+      x.fillText(`+ PERFECT RUN: ${perfectBonus}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (streakBonus > 0) {
+      setFill("#ffaa44");
+      x.fillText(`+ Streak Bonus: ${streakBonus}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    // Final score
+    setFill("#ffffff");
+    x.font = "bold 24px 'Poiret One', sans-serif";
+    x.fillText(`Final Score: ${finalScore}`, w / 2, currentY);
+  } else {
+    // Game over: show efficiency rating
+    let efficiencyRating = "Beginner";
+    if (efficiencyScore > 60) efficiencyRating = "Expert";
+    else if (efficiencyScore > 30) efficiencyRating = "Skilled";
+    else if (efficiencyScore > 15) efficiencyRating = "Apprentice";
+    
+    setFill("#888888");
+    x.font = "20px 'Poiret One', sans-serif";
+    x.fillText(`Efficiency: ${efficiencyScore}/min (${efficiencyRating})`, w / 2, currentY);
+    currentY += 30;
+    
+    // Single tip/feedback (choose most relevant)
+    setFill("#999999");
+    if (totalLost === 0 && totalCollected > 5) {
+      x.fillText("Perfect run - no fireflies lost!", w / 2, currentY);
+    } else if (lossRate > 50) {
+      x.fillText("Tip: Use your shield to protect fireflies", w / 2, currentY);
+    } else if (bestStreak >= 10) {
+      x.fillText("Impressive streak mastery!", w / 2, currentY);
+    }
   }
   
-  // Restart instruction - subtle but visible
+  // Unified restart instruction
   setFill("#bbbbbb");
   x.font = "20px 'Poiret One', sans-serif";
-  x.fillText("Click to begin another journey", w / 2, h / 2 + 100);
+  x.fillText(gameWon ? "Click to play again" : "Click to begin another journey", w / 2, currentY + 40);
   
   x.restore();
 };
@@ -2246,16 +2342,20 @@ const drawMainUI = () => {
     x.fillText(summonFeedback.text, w / 2, h / 2 - 150);
   }
   
-  // === BOTTOM CENTER: Overheat/Heat Warning ===
+  // === PLAYER CURSOR: Overheat/Heat Warning ===
   x.textAlign = "center";
-  if (summonOverheated) {
+  const recentAttempt = Date.now() - lastOverheatAttempt < 2000; // Show for 2 seconds after attempt
+  
+  if (summonOverheated || recentAttempt) {
     setFill("#ff9999");
     x.font = "18px 'Poiret One', sans-serif";
-    x.fillText("EXHAUSTED - Wait to recover", w / 2, h - 80);
+    // Position under player cursor for better visibility
+    x.fillText("EXHAUSTED - Wait to recover", mx, my + 30);
   } else if (summonHeat > 70) {
     setFill("#ffcc99");
     x.font = "16px 'Poiret One', sans-serif";
-    x.fillText(`Heat: ${Math.floor(summonHeat)}% - Slow down!`, w / 2, h - 80);
+    // Position under player cursor for better visibility
+    x.fillText(`Heat: ${Math.floor(summonHeat)}% - Slow down!`, mx, my + 30);
   }
   
   // Tutorial progression - advance to final step when mana gets low OR after enough progress OR after time
@@ -2267,6 +2367,19 @@ const drawMainUI = () => {
         tutorialStep3Timer > 900 // 15 seconds (60 fps * 15)
     ) {
       tutorialStep = 4; // Move to survival preparation tutorial
+      tutorialStep4Timer = 0; // Reset step 4 timer
+    }
+  }
+  
+  // Auto-complete tutorial after showing step 4 briefly
+  if (!tutorialComplete && tutorialStep === 4) {
+    tutorialStep4Timer++; // Count frames at step 4
+    if (tutorialStep4Timer > 300 || // 5 seconds (60 fps * 5)
+        score >= 15 || 
+        totalCollected >= 3) {
+      tutorialComplete = true;
+      localStorage.setItem('tutorialComplete', 'true');
+      addScoreText('Tutorial Complete! Good luck...', w / 2, h / 2 + 30, '#00ff00', 400);
     }
   }
   
@@ -2280,111 +2393,6 @@ const drawMainUI = () => {
 };
 
 // Draw victory screen when player survives the night
-const drawVictoryScreen = () => {
-  if (!gameWon) return;
-  
-  // Calculate survival time and stats
-  const gameTime = NIGHT_DURATION;
-  const gameMinutes = Math.floor(gameTime / 60000);
-  const gameSeconds = Math.floor((gameTime % 60000) / 1000);
-  const timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
-  
-  // Calculate final score components
-  const survivalBonus = 1000; // Bonus for surviving the night
-  const perfectBonus = totalLost === 0 ? 500 : 0;
-  const streakBonus = bestStreak * 50;
-  const finalScore = score + survivalBonus + perfectBonus + streakBonus;
-  
-  // Semi-transparent overlay
-  setFill(BLACK(0.95));
-  x.fillRect(0, 0, w, h);
-  
-  x.save();
-  x.textAlign = "center";
-  
-  // Victory title with dawn colors
-  const gradient = x.createLinearGradient(0, h / 2 - 120, 0, h / 2 - 80);
-  gradient.addColorStop(0, "#ffdd00");
-  gradient.addColorStop(0.5, "#ff8844");
-  gradient.addColorStop(1, "#ffdd00");
-  x.fillStyle = gradient;
-  x.font = "48px 'Griffy', cursive";
-  x.shadowColor = "#ffaa00";
-  x.shadowBlur = 20;
-  x.fillText("🌅 DAWN BREAKS! 🌅", w / 2, h / 2 - 100);
-  x.shadowBlur = 0;
-  
-  // Subtitle
-  setFill("#ffffff");
-  x.font = "24px 'Poiret One', sans-serif";
-  x.fillText("You survived the night!", w / 2, h / 2 - 60);
-  
-  // Stats
-  setFill("#88ff88");
-  x.font = "20px 'Poiret One', sans-serif";
-  x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, h / 2 - 20);
-  
-  setFill(totalLost === 0 ? "#88ff88" : "#ffaa66");
-  x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, h / 2 + 5);
-  
-  setFill("#88ddff");
-  x.fillText(`Best Streak: ${bestStreak}x`, w / 2, h / 2 + 30);
-  
-  // Score breakdown with dynamic colors
-  let baseScoreColor;
-  if (score < 0) {
-    baseScoreColor = "#ff9999"; // Pastel red for negative scores
-  } else if (score < 100) {
-    baseScoreColor = "#e6e6e6"; // Soft white for low scores
-  } else if (score <= 200) {
-    baseScoreColor = "#99ff99"; // Pastel green for good scores
-  } else {
-    baseScoreColor = "#ffcc99"; // Pastel orange for excellent scores
-  }
-  
-  setFill(baseScoreColor);
-  x.font = "20px 'Poiret One', sans-serif";
-  x.fillText(`Base Score: ${score}`, w / 2, h / 2 + 60);
-  
-  setFill("#ffdd88");
-  x.fillText(`+ Night Survival: ${survivalBonus}`, w / 2, h / 2 + 80);
-  if (perfectBonus > 0) {
-    setFill("#44ff44");
-    x.fillText(`+ PERFECT RUN: ${perfectBonus}`, w / 2, h / 2 + 100);
-  }
-  if (streakBonus > 0) {
-    setFill("#ffaa44");
-    x.fillText(`+ Streak Bonus: ${streakBonus}`, w / 2, h / 2 + (perfectBonus > 0 ? 120 : 100));
-  }
-  
-  // Final score with dynamic color
-  let finalScoreColor;
-  if (finalScore < 0) {
-    finalScoreColor = "#ff9999"; // Pastel red for negative scores
-  } else if (finalScore < 100) {
-    finalScoreColor = "#e6e6e6"; // Soft white for low scores
-  } else if (finalScore <= 200) {
-    finalScoreColor = "#99ff99"; // Pastel green for good scores
-  } else {
-    finalScoreColor = "#ffcc99"; // Pastel orange for excellent scores
-  }
-  
-  setFill(finalScoreColor);
-  x.font = "bold 24px 'Poiret One', sans-serif";
-  const finalY = h / 2 + (perfectBonus > 0 ? 150 : 130) + (streakBonus > 0 ? 20 : 0);
-  x.fillText(`Final Score: ${finalScore}`, w / 2, finalY);
-  
-  // Play again instruction
-  setFill("#88ddff");
-  x.font = "20px 'Poiret One', sans-serif";
-  x.shadowColor = "#88ddff";
-  x.shadowBlur = 8;
-  x.fillText("Click to play again", w / 2, finalY + 40);
-  x.shadowBlur = 0;
-  
-  x.restore();
-};
-
 // Main game loop - orchestrates all systems
 function gameLoop() {
   const now = Date.now();
@@ -2487,7 +2495,6 @@ function gameLoop() {
   drawTutorialGuidance();
   drawHelp();
   drawGameOverScreen();
-  drawVictoryScreen();
   
   // Periodic cleanup to prevent memory leaks
   if (now % 5000 < 50) {
