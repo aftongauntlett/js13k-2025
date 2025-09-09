@@ -4,7 +4,7 @@
   "description": "A magical firefly collection game for JS13K 2025",
   "main": "dist/index.html",
   "scripts": {
-    "dev": "python3 -m http.server 8000",
+    "start": "python3 -m http.server 8000",
     "build": "npm run minify && npm run compress && npm run zip",
     "minify": "terser main.js -c -m -o dist/main.min.js",
     "roadroller": "roadroller dist/main.min.js -o dist/main.roadroller.js",
