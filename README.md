@@ -3,47 +3,45 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![js13k](https://img.shields.io/badge/js13k-2025-orange.svg)](https://js13kgames.com/)
 [![Size](https://img.shields.io/badge/size-<13KB-brightgreen.svg)](#)
-
-> The Luminid gathered fireflies whose glow matched the Cat's eyes; the Cat's eyes, in turn, changed as if to test the Luminid's wit. Was the Cat setting the challenge, or was it following the Luminid's lead? Neither seemed certain, and neither seemed to mind. All that was known, and only at night, was that the two would meet again, and the colors would change, and the game would go on until the moon grew tired of watching.
+[![Commits](https://img.shields.io/github/commit-activity/t/aftongauntlett/js13k-2025?style=flat&logo=git&logoColor=white&label=commits&color=blue)](https://github.com/aftongauntlett/js13k-2025/commits)
 
 ## Game Overview
-
-You are the Luminid, a wanderer of nightlight. Drift through the dark meadow, where fireflies shimmer with the same hue as the Cat’s ever-watchful eyes. Draw them close with your glow, then offer them to the Cat above to renew your fading mana.
-
-But be wary - when the Cat’s gaze begins to change, the bond with your gathered fireflies grows fragile. A single shift could scatter them back to the shadows. Call upon your shield to protect what you’ve gathered, or summon new fireflies from the night itself, at the cost of your own mana.
-
-The challenge is endless, as long as the Cat watches and the fireflies answer.
+> You are The Luminid, a wanderer of nightlight. Drift through the dark forest, where fireflies shimmer as The Cat's ever-watchful eyes follow. Draw them close with your glow, then offer them to The Cat above to renew your fading bioluminescence.
+> 
+> But be wary - when The Cat's gaze begins to change, the bond with your gathered fireflies grows fragile. A single shift could scatter them back to the shadows. Call upon your shield to protect what you've gathered, or summon new fireflies from the night itself, at the cost of your own bioluminescence.
+> 
+> Survive the full night (10 minutes) until sunrise by collecting fireflies, managing your bioluminescence, and timing your shields perfectly when The Cat's eyes shift colors.
 
 ## Controls
 
-- **Mouse Movement**: Guide your firefly form around the night
-- **Tap: Left-Click / Spacebar**: Unleash a quick burst of shield (uses mana)
-- **Hold: Left-Click / Spacebar**: Sustain your shield, draining mana as long as it’s active
-- **H Key**: Show or hide the help overlay
+- **Mouse Movement**: Guide The Luminid through the night
+- **Tap: Left-Click / Spacebar**: Summon additional fireflies (uses bioluminescence)
+- **Hold: Left-Click / Spacebar**: Activates your shield, draining bioluminescence as long as it's active. Protects against The Cat's gaze shifts. *Perfection is rewarded.*
+- **ESC Key**: Show or hide the help overlay
+- **M Key**: Toggle audio on/off
 
-## Gameplay Mechanics
+## Key Features
 
-### Core Loop
-1. **Collect** fireflies by drawing near them
-2. **Watch** The Cat’s eyes for shifting colors - danger is near
-3. **Shield** during shifts to protect your gathered fireflies
-4. **Deliver** fireflies to the Cat to score points and restore mana
-
-### Strategic Elements
-- **Mana Management**: Every shield drains mana; every offering restores it
-- **Timing**: Well-timed shields during eye shifts maximize survival
-- **Risk vs Reward**: Carry more fireflies for bigger scores - but greater loss if unguarded
-
-### Special Features
-- **Dynamic Difficulty**: The Cat’s gaze grows quicker and more unpredictable over time
-- **Mana Fireflies**: Golden fireflies appear in moments of low mana
+- **Dynamic Difficulty**: The Cat's gaze grows quicker and more unpredictable over time
+- **Perfect Timing System**: Hit the shield at the exact moment for maximum protection and rewards
 - **Heat System**: Overusing shields or summons overheats your power, leaving you briefly exposed
+- **Delivery Streaks**: Chain deliveries for bonus curiosity points
+- **Bioluminescence Management**: Balance energy between summoning fireflies and maintaining shields
+
+## Scoring System
+
+- **Cat's Curiosity**: Your primary score, increased by delivering fireflies
+- **Time Until Sunrise**: Survive the full night to see dawn
+- **Streak Bonuses**: Build consecutive deliveries for multiplied rewards
+- **Perfect Run Bonuses**: Complete the night without losing fireflies
 
 ## Technical Details
 
 - **Engine**: Vanilla JavaScript with Canvas 2D
 - **Size**: Optimized for js13k competition (<13KB zipped)
 - **Performance**: 60fps gameplay with efficient rendering
+- **Fonts**: Google Fonts integration (Griffy, Poiret One)
+- **Audio**: Dynamic sound effects and ambient audio
 
 ## Development
 
@@ -66,3 +64,31 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 *Entry for js13k Games 2025 Competition - Built with ✨ by [Afton Gauntlett](https://github.com/aftongauntlett)*
 
+## Technical Details
+
+- **Engine**: Vanilla JavaScript with Canvas 2D
+- **Size**: Optimized for js13k competition (<13KB zipped)
+- **Performance**: 60fps gameplay with efficient rendering
+- **Fonts**: Google Fonts integration (Griffy, Poiret One)
+- **Audio**: Dynamic sound effects and ambient audio
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm start
+
+# Build for production
+npm run build
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+*Entry for js13k Games 2025 Competition - Built with ✨ by [Afton Gauntlett](https://github.com/aftongauntlett)*
