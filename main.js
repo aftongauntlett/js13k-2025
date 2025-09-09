@@ -247,7 +247,25 @@ const drawForest = () => {
   drawTree(w * 0.85, h * 0.78, 90, 140);
   drawTree(w * 0.95, h * 0.83, 65, 95);
   
-  // Distant mountain silhouettes
+  // Distant mountain silhouettes with horizon glow matching cat eyes
+  // First draw the glow behind the mountains
+  x.save();
+  const catColors = getCatEyeColors();
+  x.shadowColor = catColors.rgba(0.3); // More subtle cat eye color glow
+  x.shadowBlur = 40; // Larger, softer glow
+  setFill("#0f0f0f");
+  x.beginPath();
+  x.moveTo(0, h * 0.6);
+  x.lineTo(w * 0.3, h * 0.4);
+  x.lineTo(w * 0.7, h * 0.5);
+  x.lineTo(w, h * 0.3);
+  x.lineTo(w, h);
+  x.lineTo(0, h);
+  x.closePath();
+  x.fill();
+  x.restore();
+  
+  // Then draw the mountains again without glow for clean edges
   setFill("#0f0f0f");
   x.beginPath();
   x.moveTo(0, h * 0.6);
@@ -290,14 +308,32 @@ const WHISKERS = [
   { len: 110, yOff: 65, spread: 25 }   // bottom
 ];
 
-// Helper function for cat eye color logic
+// Helper function for cat eye color logic with centralized flashing
 const getCatEyeColors = () => {
+  let baseColor;
   switch (catEyeColor) {
-    case "gold": return { hex: "#ffdd00", r: 255, g: 221, b: 0 };
-    case "purple": return { hex: "#8844ff", r: 136, g: 68, b: 255 };
-    case "pink": return { hex: "#ff44aa", r: 255, g: 68, b: 170 };
-    default: return { hex: "#ffdd00", r: 255, g: 221, b: 0 };
+    case "gold": baseColor = { hex: "#ffdd00", r: 255, g: 221, b: 0 }; break;
+    case "purple": baseColor = { hex: "#8844ff", r: 136, g: 68, b: 255 }; break;
+    case "pink": baseColor = { hex: "#ff44aa", r: 255, g: 68, b: 170 }; break;
+    default: baseColor = { hex: "#ffdd00", r: 255, g: 221, b: 0 }; break;
   }
+  
+  // Apply flashing effect if active
+  if (flashTimer > 0) {
+    // Flash to white for danger warnings
+    const flashIntensity = flashTimer / 200; // Normalize to 0-1
+    return {
+      hex: `#${Math.floor(255 - (255 - baseColor.r) * flashIntensity).toString(16).padStart(2, '0')}${Math.floor(255 - (255 - baseColor.g) * flashIntensity).toString(16).padStart(2, '0')}${Math.floor(255 - (255 - baseColor.b) * flashIntensity).toString(16).padStart(2, '0')}`,
+      r: Math.floor(255 - (255 - baseColor.r) * flashIntensity),
+      g: Math.floor(255 - (255 - baseColor.g) * flashIntensity),
+      b: Math.floor(255 - (255 - baseColor.b) * flashIntensity),
+      rgba: (alpha = 1) => `rgba(${Math.floor(255 - (255 - baseColor.r) * flashIntensity)}, ${Math.floor(255 - (255 - baseColor.g) * flashIntensity)}, ${Math.floor(255 - (255 - baseColor.b) * flashIntensity)}, ${alpha})`
+    };
+  }
+  
+  // Add rgba helper for convenience
+  baseColor.rgba = (alpha = 1) => `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${alpha})`;
+  return baseColor;
 };
 
 // Initialize cat eyes
@@ -1023,11 +1059,11 @@ const drawFireflies = (now) => {
     const alpha = firefly.fadeIn;
     if (alpha <= 0) return;
     
-    // Firefly color based on state - fireflies keep their normal colors even when player is overheated
+    // Firefly color based on state
     let baseColor, flashIntensity;
     
-    // Fireflies always maintain their normal colors
-    baseColor = firefly.captured ? "#00aaff" : "#ffff88";
+    // Traditional firefly green for wild fireflies, blue when captured by player
+    baseColor = firefly.captured ? "#4488ff" : "#88ff44"; // Blue when captured, green when wild
     const isFlashing = sin(firefly.flashTimer) > 0.6;
     flashIntensity = isFlashing ? 1.5 : 0.8;
     
@@ -1287,8 +1323,8 @@ const drawPlayerFirefly = (playerX, playerY, now) => {
     
     setFill(exhaustedColor);
   } else {
-    // Normal healthy colors
-    const firefly_color = isMoving ? "#00aaff" : "#aaaacc"; // Cyan when moving, gray when idle
+    // Player firefly is always blue (rare blue firefly species)
+    const firefly_color = isMoving ? "#4488ff" : "#6699ff"; // Blue when moving, lighter blue when idle
     setFill(firefly_color);
   }
   
@@ -1345,18 +1381,23 @@ const drawPlayerManaRing = (playerX, playerY, now) => {
   
   x.save();
   
-  // Magical sparkle particles around the bioluminescence ring
+  // Magical sparkle particles around the bioluminescence ring - match cat eye colors
   const sparkleRadius = baseRadius + 5;
   const sparkleCount = 8;
+  
+  // Get current cat eye colors for the orbs
+  const catColors = getCatEyeColors();
+  const orbColor = `${catColors.r}, ${catColors.g}, ${catColors.b}`;
+  
   for (let i = 0; i < sparkleCount; i++) {
     const angle = (now * 0.005 + i * TAU / sparkleCount) % TAU;
     const sparkleX = playerX + cos(angle) * sparkleRadius;
     const sparkleY = playerY + sin(angle) * sparkleRadius;
     const twinkle = (sin(now * 0.02 + i) * 0.5 + 0.5) * 0.8;
     
-    x.shadowColor = "#88ffaa";
+    x.shadowColor = catColors.hex;
     x.shadowBlur = 8;
-    setFill(`rgba(136, 255, 170, ${twinkle})`);
+    setFill(`rgba(${orbColor}, ${twinkle})`);
     x.beginPath();
     x.arc(sparkleX, sparkleY, 1.5, 0, TAU);
     x.fill();
@@ -1378,7 +1419,9 @@ const drawPlayerManaRing = (playerX, playerY, now) => {
   
   // Bioluminescence indicator as soft floating dots instead of solid ring
   if (manaEnergy > 0) {
-    const manaColor = manaEnergy > 50 ? "#88ffaa" : manaEnergy > 20 ? "#ffcc88" : "#ffaaaa";
+    // Use cat eye colors for consistency instead of static mana colors
+    const catColors = getCatEyeColors();
+    const manaColor = catColors.hex;
     const dotCount = Math.ceil((manaEnergy / 100) * 12); // 0-12 dots based on mana
     
     for (let i = 0; i < dotCount; i++) {
@@ -1417,15 +1460,15 @@ const drawPlayerManaRing = (playerX, playerY, now) => {
     }
   }
   
-  // Shield indicator - magical protective barrier
+  // Shield indicator - magical protective barrier with neutral energy color
   if (shieldActive) {
     const shieldRadius = baseRadius + 10;
     const rotation = now * 0.008;
     const pulse = sin(now * 0.015) * 0.3 + 0.7;
     
-    // Shield color - gray for all states
-    const shieldColor = summonOverheated ? "120, 120, 120" : "140, 140, 140"; // Always gray
-    const shadowColor = summonOverheated ? "#888888" : "#999999";
+    // Shield uses magical energy color instead of cat eye colors
+    const shieldColor = summonOverheated ? "120, 120, 120" : "170, 220, 255"; // Soft blue energy
+    const shadowColor = summonOverheated ? "#888888" : "#aaddff";
     
     // Rotating magical runes/symbols
     for (let i = 0; i < 6; i++) {
@@ -2335,9 +2378,9 @@ const drawMainUI = () => {
   x.textAlign = "left";
   let leftY = 100; // Gap after streak
   
-  // Bioluminescence display (always show)
-  const manaColor = manaEnergy > 50 ? "#99ffcc" : manaEnergy > 20 ? "#ffcc99" : "#ff9999";
-  setFill(manaColor);
+  // Bioluminescence display (always show) - use cat eye colors for consistency
+  const catColors = getCatEyeColors();
+  setFill(catColors.hex);
   x.font = "18px 'Poiret One', sans-serif";
   x.fillText(`Bioluminescence: ${Math.floor(manaEnergy)}`, 20, leftY);
   leftY += 25;
