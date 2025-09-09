@@ -11,12 +11,12 @@ const cos = Math.cos;
 // Game balance constants
 const CFG = {
   catEyeRadius: 40,
-  warnFrames: 180,      // 3 seconds warning before eye color change
-  flash1: 60,           // First warning flash timing
-  flash2: 120,          // Second flash timing  
-  flash3: 150,          // Third flash timing
-  shieldCooldown: 240,  // 4 seconds between shield uses
-  maxFireflies: 25,     // Population limit
+  warnFrames: 240,      // 4 seconds warning before eye color change (increased from 3)
+  flash1: 80,           // First warning flash timing (proportionally adjusted)
+  flash2: 160,          // Second flash timing (proportionally adjusted)
+  flash3: 200,          // Third flash timing (proportionally adjusted)
+  shieldCooldown: 180,  // 3 seconds between shield uses (reduced from 4)
+  maxFireflies: 35,     // Population limit (increased from 25)
   deliveryRadius: 80,   // Delivery zone size
 };
 
@@ -175,8 +175,10 @@ let mouseNearCat = false, catProximity = 0;
 // Tutorial system
 let tutorialComplete = localStorage.getItem('tutorialComplete') === 'true';
 let tutorialStep = 0, firstDeliveryMade = false, tutorialTimer = 0;
+let tutorialStep1Timer = 0; // Track time spent on step 1 (summoning phase)
 let tutorialStep3Timer = 0; // Track time spent on step 3
 let tutorialStep4Timer = 0; // Track time spent on step 4
+let tutorialMissedShield = false; // Track if player missed a shield during tutorial
 let showHelp = false;
 let showTutorialElements = false; // Show ring and count during tutorial only
 
@@ -593,7 +595,7 @@ const drawCatEyes = (now) => {
 
 // Update cat eye color changes and warnings
 const updateCatEyes = (now) => {
-  // During tutorial steps 0-1, keep cat eyes stable for learning
+  // During tutorial steps 0-1.5, keep cat eyes stable for learning
   if (!tutorialComplete && tutorialStep < 2) {
     // Still update blinking animation during tutorial
     catEyes.forEach(eye => {
@@ -649,38 +651,41 @@ const updateCatEyes = (now) => {
 // Handle color change mechanics and shield protection
 const handleColorChange = (now) => {
   const capturedFireflies = otherFireflies.filter(f => f.captured);
-  const freeFireflies = otherFireflies.filter(f => !f.captured);
   
   // Handle captured fireflies (existing logic)
   if (capturedFireflies.length > 0) {
     if (shieldActive) {
       handleShieldProtection(capturedFireflies, now);
     } else {
-      // No shield - full penalty
+      // No shield - partial penalty
       handleNoPenalty(capturedFireflies);
     }
   }
   
-  // Handle free fireflies - cat eats them unless perfectly protected
-  if (freeFireflies.length > 0) {
-    const protectedFireflies = freeFireflies.filter(f => f.perfectlyProtected);
-    const eatenFireflies = freeFireflies.filter(f => !f.perfectlyProtected);
+  // Handle free fireflies - now they're also protected by shields!
+  const freeFireflies = otherFireflies.filter(f => !f.captured);
+  if (freeFireflies.length > 0 && !shieldActive) {
+    // No shield active - remove only some free fireflies (not all!)
+    const firefliesEaten = Math.ceil(freeFireflies.length * 0.5); // Only eat 50% of free fireflies
+    const firefliesSaved = freeFireflies.length - firefliesEaten;
     
-    if (eatenFireflies.length > 0) {
-      // Remove eaten fireflies
-      otherFireflies = otherFireflies.filter(f => f.captured || f.perfectlyProtected);
-      totalLost += eatenFireflies.length;
-      
-      // Visual feedback for eaten fireflies - simple and quick
-      if (protectedFireflies.length > 0) {
-        clearShieldFeedback(); // Clear existing feedback to prevent stacking
-        addScoreText(`+${protectedFireflies.length} PERFECT!`, w / 2, h / 2 + 40, "#00ff88", 600); // Increased to 600 frames
+    // Remove eaten fireflies
+    for (let i = 0; i < firefliesEaten && freeFireflies.length > 0; i++) {
+      const randomIndex = Math.floor(Math.random() * freeFireflies.length);
+      const firefly = freeFireflies.splice(randomIndex, 1)[0];
+      const fireflyIndex = otherFireflies.indexOf(firefly);
+      if (fireflyIndex > -1) {
+        otherFireflies.splice(fireflyIndex, 1);
       }
-      addScoreText(`-${eatenFireflies.length}`, w / 2, h / 2 + 70, "#ff8844", 600); // Increased to 600 frames for better visibility
     }
     
-    // Clear protection flags
-    otherFireflies.forEach(f => f.perfectlyProtected = false);
+    totalLost += firefliesEaten;
+    
+    // Show feedback only if we're not already showing shield feedback
+    if (capturedFireflies.length === 0) {
+      clearShieldFeedback();
+      addScoreText(`-${firefliesEaten}`, w / 2, h / 2, "#ffaa44", 300);
+    }
   }
   
   changeToNewColor();
@@ -733,57 +738,66 @@ const handleShieldProtection = (capturedFireflies, now) => {
   const soundFreqs = { "PERFECT": 300, "GREAT": 250, "GOOD": 200, "LATE": 180 };
   playTone(soundFreqs[timingQuality], 0.2, 0.15);
   
-  // Visual feedback - simple and quick
-  const protectionText = firefliesLost === 0 ? 
-    `${timingQuality} SHIELD!` : 
-    `${timingQuality}: +${firefliesProtected} -${firefliesLost}`;
+  // Visual feedback - minimal
+  let protectionText;
+  if (firefliesLost === 0) {
+    protectionText = `SHIELD`;
+  } else {
+    protectionText = `-${firefliesLost}`;
+  }
   
   // Clear any existing shield feedback to prevent stacking
   clearShieldFeedback();
-  addScoreText(protectionText, w / 2, h / 2 - 100, getTimingColor(timingQuality), 600); // Increased to 600 frames (10 seconds) for much better readability
+  addScoreText(protectionText, w / 2, h / 2 - 80, getTimingColor(timingQuality), 300);
   
   // Tutorial progression - advance after successful shield use
   if (!tutorialComplete && tutorialStep === 2 && firefliesProtected > 0) {
     tutorialStep = 3; // Move to resource management tutorial
+    tutorialMissedShield = false; // Reset missed shield flag
   }
 };
 
-// No shield protection - partial penalty (was full penalty)
+// No shield protection - simplified penalty system
 const handleNoPenalty = (capturedFireflies) => {
-  // Instead of losing ALL fireflies, lose 60% of them
-  const firefliesLost = Math.ceil(capturedFireflies.length * 0.6); // 60% lost instead of 100%
+  // Lose only 50% of captured fireflies (much more forgiving)
+  const firefliesLost = Math.ceil(capturedFireflies.length * 0.5);
   const firefliesSaved = capturedFireflies.length - firefliesLost;
   
   score -= firefliesLost;
   totalLost += firefliesLost;
   
-  // Show what happened - simple format with longer duration for learning
-  clearShieldFeedback(); // Clear existing feedback to prevent stacking
-  addScoreText(`NO SHIELD: +${firefliesSaved} -${firefliesLost}`, w / 2, h / 2 - 60, "#ffaa44", 600); // Increased to 600 frames
+  // Show what happened with single, clear message
+  clearShieldFeedback();
   
-  // Break delivery streak when fireflies are lost
-  if (deliveryStreak > 0) {
-    addScoreText(`Streak broken!`, w / 2, h / 2 + 40, "#ff6666", 600); // Increased to 600 frames for much better visibility
-    deliveryStreak = 0;
+  let noShieldText;
+  if (firefliesLost > 0) {
+    noShieldText = `-${firefliesLost}`;
+  } else {
+    noShieldText = `NO LOSS`;
   }
   
-  // Partial release - only release the lost fireflies
+  addScoreText(noShieldText, w / 2, h / 2 - 60, "#ffaa44", 300);
+  
+  // Tutorial - track missed shields for repeat explanation (but don't show extra text)
+  if (!tutorialComplete && tutorialStep === 2) {
+    tutorialMissedShield = true;
+    // The tutorial text itself will show the help - no need for extra messages here
+  }
+  
+  // Release only the lost fireflies
   releaseCapturedFireflies(firefliesLost);
   
-  // If we lost some but not all, continue charging with remaining fireflies
-  if (firefliesSaved > 0) {
-    // Keep some fireflies captured
-    const remainingFireflies = otherFireflies.filter(f => f.captured).slice(0, firefliesSaved);
-    charging = remainingFireflies.length > 0;
+  // Continue charging if we have any fireflies left
+  const remainingFireflies = capturedFireflies.length - firefliesLost;
+  if (remainingFireflies > 0) {
+    charging = true;
   } else {
-    // Lost all fireflies
     charging = false;
     glowPower = 0;
   }
   
   // Create dispersal effect only for lost fireflies
-  const dispersalCount = Math.min(firefliesLost, capturedFireflies.length);
-  for (let i = 0; i < dispersalCount; i++) {
+  for (let i = 0; i < firefliesLost; i++) {
     if (capturedFireflies[i]) {
       createDispersalEffect(capturedFireflies[i]);
     }
@@ -812,19 +826,19 @@ const setNextColorChangeTime = () => {
   const gameTime = Date.now() - (startTime || Date.now());
   const gameMinutes = gameTime / 60000;
   
-  // Progressive difficulty - timing gets faster over time
-  let minTime = 480, maxTime = 900; // 8-15 seconds base
+  // More forgiving progressive difficulty - longer times, slower progression
+  let minTime = 600, maxTime = 1200; // 10-20 seconds base (increased from 8-15)
   
-  if (gameMinutes > 1) {
-    const midGameFactor = Math.min(1, (gameMinutes - 1) / 2);
-    minTime = F(480 - (240 * midGameFactor)); // Down to 4 seconds
-    maxTime = F(900 - (400 * midGameFactor)); // Down to 8.3 seconds
+  if (gameMinutes > 2) { // Start difficulty increase later (was 1 minute)
+    const midGameFactor = Math.min(1, (gameMinutes - 2) / 3); // Slower progression
+    minTime = F(600 - (300 * midGameFactor)); // Down to 5 seconds (was 4)
+    maxTime = F(1200 - (500 * midGameFactor)); // Down to 11.6 seconds (was 8.3)
   }
   
-  if (gameMinutes > 3) {
-    const lateGameFactor = Math.min(1, (gameMinutes - 3) / 2);
-    minTime = F(180 - (60 * lateGameFactor)); // Down to 2 seconds
-    maxTime = F(420 - (120 * lateGameFactor)); // Down to 5 seconds
+  if (gameMinutes > 5) { // Late game starts later (was 3 minutes)
+    const lateGameFactor = Math.min(1, (gameMinutes - 5) / 3); // Slower late game
+    minTime = F(300 - (120 * lateGameFactor)); // Down to 3 seconds (was 2)
+    maxTime = F(700 - (200 * lateGameFactor)); // Down to 8.3 seconds (was 5)
   }
   
   nextColorChangeTime = minTime + F(r() * (maxTime - minTime));
@@ -867,7 +881,7 @@ const drawDeliveryZone = (now) => {
 // ===== SCORE SYSTEM =====
 
 // Add floating score text
-const addScoreText = (text, x, y, color = "#ffffff", life = 300) => { // Increased default from 120 to 300
+const addScoreText = (text, x, y, color = "#ffffff", life = 180) => { // Reduced for minimal text
   scoreTexts.push({ text, x, y, life: 0, maxLife: life, color });
 };
 
@@ -888,8 +902,9 @@ const drawScoreTexts = () => {
     const progress = text.life / text.maxLife;
     const alpha = 1 - progress; // Fade out over time
     
-    // Only apply scaling to short numeric text (like +5, -3, etc.)
+    // Different font sizes for different types of messages
     const isShortNumeric = /^[+\-]\d+$/.test(text.text.trim()) || /^\+\d+\s+PERFECT!$/.test(text.text);
+    const isShieldMessage = text.text.includes('SHIELD') || text.text.includes('NO SHIELD');
     
     let fontSize;
     if (isShortNumeric) {
@@ -897,15 +912,20 @@ const drawScoreTexts = () => {
       const startSize = 24;
       const endSize = 16;
       fontSize = Math.floor(startSize - (startSize - endSize) * progress);
+    } else if (isShieldMessage) {
+      // Larger, more prominent text for shield messages
+      fontSize = 24; // Constant large size for shield messages
     } else {
-      // Keep consistent size for text messages
+      // Keep consistent size for other text messages
       fontSize = 16;
     }
     
+    const fontFamily = isShieldMessage ? "'Poiret One', sans-serif" : "'Lucida Console', 'Courier New', monospace";
+    
     setFill(text.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
-    x.font = `${fontSize}px 'Lucida Console', 'Courier New', monospace`;
+    x.font = `${fontSize}px ${fontFamily}`;
     x.textAlign = "center";
-    x.fillText(text.text, text.x, text.y - text.life * 0.5);
+    x.fillText(text.text, text.x, text.y - text.life * 0.3); // Slower movement for shield messages
     
     text.life++;
   });
@@ -1067,7 +1087,7 @@ const drawFireflies = (now) => {
     const isFlashing = sin(firefly.flashTimer) > 0.6;
     flashIntensity = isFlashing ? 1.5 : 0.8;
     
-    // Glow effect - much dimmer when overheated
+    // Glow effect
     const glowRadius = firefly.size * 3 * flashIntensity;
     const gradient = x.createRadialGradient(
       firefly.x, firefly.y, 0,
@@ -1084,9 +1104,10 @@ const drawFireflies = (now) => {
     x.fill();
     
     // Draw firefly body
+    const bodySize = firefly.size;
     setFill(baseColor + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
     x.beginPath();
-    x.arc(firefly.x, firefly.y, firefly.size, 0, TAU);
+    x.arc(firefly.x, firefly.y, bodySize, 0, TAU);
     x.fill();
   });
 };
@@ -1112,13 +1133,12 @@ const checkDeliveryZone = (playerX, playerY) => {
 
 // Deliver captured fireflies to the cat
 const deliverFireflies = (capturedFireflies) => {
-  const basePoints = capturedFireflies.length;
-  
   // Streak bonus system
   deliveryStreak++;
   bestStreak = Math.max(bestStreak, deliveryStreak);
   
-  // Calculate streak multiplier (1x, 1.5x, 2x, 2.5x, 3x max)
+  // Simple scoring system
+  const basePoints = capturedFireflies.length;
   const streakMultiplier = Math.min(3, 1 + (deliveryStreak - 1) * 0.5);
   const pointsAwarded = Math.floor(basePoints * streakMultiplier);
   
@@ -1134,21 +1154,22 @@ const deliverFireflies = (capturedFireflies) => {
     summonOverheated = false;
   }
   
-  // Restore some bioluminescence
-  manaEnergy = Math.min(100, manaEnergy + capturedFireflies.length * 5);
+  // Restore bioluminescence based on fireflies delivered
+  const manaBonus = capturedFireflies.length * 5;
+  manaEnergy = Math.min(100, manaEnergy + manaBonus);
   
-  // Visual feedback - simple score only
+  // Visual feedback
   let feedbackText = `+${pointsAwarded}`;
   let feedbackColor = "#00ff00";
   
-  // Color based on streak level but no text clutter
+  // Color based on streak level
   if (deliveryStreak >= 5) {
     feedbackColor = "#ffaa00"; // Hot orange for big streaks
   } else if (deliveryStreak >= 3) {
     feedbackColor = "#88ff88"; // Bright green for good streaks
   }
   
-  addScoreText(feedbackText, w / 2, h / 2, feedbackColor, 500); // Increased to 500 frames for score feedback
+  addScoreText(feedbackText, w / 2, h / 2, feedbackColor, 180); // Quick feedback
   
   // Spawn new fireflies to maintain population
   const spawnCount = Math.min(3, capturedFireflies.length);
@@ -1164,11 +1185,19 @@ const deliverFireflies = (capturedFireflies) => {
     showTutorialElements = false; // Hide tutorial elements after first delivery
     if (!tutorialComplete && tutorialStep === 0) {
       tutorialStep = 1; // Move to bioluminescence tutorial after first delivery
+      tutorialStep1Timer = 0; // Reset step 1 timer
       // Spawn more fireflies for next phase
       for (let i = 0; i < 8; i++) {
         spawnFirefly();
       }
     }
+  }
+  
+  // Advance from overheat tutorial step when player delivers fireflies
+  if (!tutorialComplete && tutorialStep === 1.5) {
+    tutorialStep = 2; // Move to shield tutorial after they learn to restore energy
+    catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
+    setNextColorChangeTime(); // Set a fresh timing
   }
 };
 
@@ -1248,11 +1277,11 @@ const updatePlayer = (now) => {
         shieldCooldown = 60; // 1 second
       }
     } else {
-      // Drain bioluminescence while shield is active
-      manaEnergy = Math.max(0, manaEnergy - 0.15); // Slightly faster drain
+      // Drain bioluminescence while shield is active - reduced drain rate
+      manaEnergy = Math.max(0, manaEnergy - 0.1); // Reduced from 0.15 to 0.1
       
       // Add heat for sustained shield use (slower than summoning)
-      summonHeat += 0.5; // Gradual heat buildup for shield use
+      summonHeat += 0.4; // Reduced from 0.5 for more forgiving gameplay
     }
   }
   
@@ -1271,8 +1300,13 @@ const updateSummonHeat = () => {
     summonOverheated = true;
     overheatStunned = true;
     overheatCooldown = 180; // 3 seconds of cooldown (60fps * 3)
-    addScoreText("OVERHEATED!", mx, my - 30, "#ff4444", 300); // Increased from 120 to 300
+    addScoreText("OVERHEATED!", mx, my - 30, "#ff4444", 300);
     playTone(200, 0.5, 0.1); // Overheat warning sound
+    
+    // Tutorial - advance to overheat explanation when it actually happens
+    if (!tutorialComplete && tutorialStep === 1) {
+      tutorialStep = 1.5; // Move to overheat explanation step
+    }
     
     // Disperse captured fireflies aggressively
     otherFireflies.forEach(firefly => {
@@ -1877,16 +1911,7 @@ const summonFirefly = () => {
   }
   lastSummonTime = Date.now();
   
-  // Tutorial progression - advance to shield tutorial after summoning
-  if (!tutorialComplete && tutorialStep === 1) {
-    // Check if player has summoned a few times
-    const summonCount = (100 - manaEnergy) / 10; // Rough count of summons
-    if (summonCount >= 3) {
-      tutorialStep = 2; // Move to shield tutorial
-      catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
-      setNextColorChangeTime(); // Set a fresh timing
-    }
-  }
+  // No automatic tutorial progression here - let overheating or timer handle it
   
   // Spawn firefly near mouse
   const spawnX = mx + (r() - 0.5) * 100;
@@ -1970,8 +1995,10 @@ const restartGame = () => {
   // Reset tutorial
   tutorialComplete = false; // Reset tutorial state so it runs again
   tutorialStep = 0;
+  tutorialStep1Timer = 0; // Reset step 1 timer
   tutorialStep3Timer = 0; // Reset step 3 timer
   tutorialStep4Timer = 0; // Reset step 4 timer
+  tutorialMissedShield = false; // Reset missed shield flag
   firstDeliveryMade = false;
   showTutorialElements = true; // Show tutorial elements until first delivery
   
@@ -1980,14 +2007,14 @@ const restartGame = () => {
   runStartTime = Date.now();
   lastSpawnTime = Date.now(); // Reset spawn timer
   
-  // Spawn initial fireflies - only 5 for tutorial step 0
+  // Spawn initial fireflies - more generous starting counts
   let spawnCount;
   if (tutorialComplete) {
-    spawnCount = 20;
+    spawnCount = 25; // Increased from 20
   } else if (tutorialStep === 0) {
-    spawnCount = 5; // Only 5 fireflies for first tutorial step
+    spawnCount = 8; // Increased from 5 for better tutorial experience
   } else {
-    spawnCount = 12; // More for later tutorial steps
+    spawnCount = 15; // Increased from 12
   }
   for (let i = 0; i < spawnCount; i++) {
     spawnFirefly();
@@ -2038,20 +2065,37 @@ const drawTutorialGuidance = () => {
       // Bioluminescence management - after first delivery
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Your bioluminescence is precious.", w / 2, h - 100);
+      x.fillText("Your bioluminescence attracts fireflies.", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
       x.fillText("Click to summon more fireflies", w / 2, h - 75);
       break;
       
+    case 1.5:
+      // Overheat explanation - after summoning a few times
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.font = "18px 'Poiret One', sans-serif";
+      x.fillText("CAREFUL! Too much summoning causes overheating.", w / 2, h - 110);
+      x.fillText("Turn in fireflies to restore energy and prevent overload.", w / 2, h - 85);
+      
+      setFill(`rgba(255, 255, 100, ${pulse})`); // Yellow for warning
+      x.fillText("More fireflies delivered = faster energy recovery", w / 2, h - 60);
+      break;
+      
     case 2:
-      // Shield mechanics - after summoning
+      // Shield mechanics - after summoning and learning about mana
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Watch the cat's eyes carefully.", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
-      x.fillText("Press and hold when its eyes shift!", w / 2, h - 75);
+      x.fillText("Hold SPACE or MOUSE when its eyes flash!", w / 2, h - 75);
+      
+      if (tutorialMissedShield) {
+        setFill(`rgba(255, 100, 100, ${pulse})`); // Red for emphasis
+        x.font = "16px 'Poiret One', sans-serif";
+        x.fillText("Shield protects your fireflies from the cat's hunger", w / 2, h - 50);
+      }
       break;
       
     case 3:
@@ -2063,7 +2107,15 @@ const drawTutorialGuidance = () => {
       break;
       
     case 4:
-      // Final warning before full gameplay - will auto-complete after 5 seconds
+      // Mana restoration step
+      setFill(`rgba(100, 255, 255, ${pulse})`);
+      x.font = "20px 'Poiret One', sans-serif";
+      x.fillText("Energy restored! You're ready for the challenge.", w / 2, h - 100);
+      x.fillText("Remember: Turn in fireflies to restore your power", w / 2, h - 75);
+      break;
+      
+    case 5:
+      // Final warning before full gameplay
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Now... survive until dawn. If you can", w / 2, h - 100);
@@ -2071,6 +2123,20 @@ const drawTutorialGuidance = () => {
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
       x.fillText("Press 'ESC' if you need reminding of the rules", w / 2, h - 75);
       break;
+      
+    case 6:
+      // Tutorial completion message
+      setFill(`rgba(100, 255, 100, ${pulse})`);
+      x.font = "22px 'Poiret One', sans-serif";
+      x.fillText("Tutorial Complete! Survive the night...", w / 2, h - 100);
+      break;
+  }
+  
+  // Debug: Show tutorial step and timer (remove this later)
+  if (!tutorialComplete) {
+    setFill("rgba(255, 255, 255, 0.7)");
+    x.font = "14px 'Poiret One', sans-serif";
+    x.fillText(`Debug: Step ${tutorialStep}, Timer: ${tutorialStep1Timer}`, 10, 30);
   }
   
   x.restore();
@@ -2423,36 +2489,71 @@ const drawMainUI = () => {
     setFill("#ff9999");
     x.font = "18px 'Poiret One', sans-serif";
     // Position under player cursor for better visibility
-    x.fillText("EXHAUSTED - Wait to recover", mx, my + 30);
-  } else if (summonHeat > 70) {
-    setFill("#ffcc99");
-    x.font = "16px 'Poiret One', sans-serif";
-    // Position under player cursor for better visibility
-    x.fillText(`Heat: ${Math.floor(summonHeat)}% - Slow down!`, mx, my + 30);
+    x.fillText("OVERHEATED", mx, my + 30);
+  }
+  
+  // Tutorial step 1 timer - give players time to experience overheating
+  if (!tutorialComplete && tutorialStep === 1) {
+    tutorialStep1Timer++; // Count frames at step 1
+    if (tutorialStep1Timer > 600) { // 10 seconds (60 fps * 10) - reduced for testing
+      // If player hasn't overheated after 10 seconds, move to shield tutorial
+      tutorialStep = 2; // Skip overheat explanation, go straight to shield tutorial
+      catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
+      setNextColorChangeTime(); // Set a fresh timing
+    }
   }
   
   // Tutorial progression - advance to final step when mana gets low OR after enough progress OR after time
   if (!tutorialComplete && tutorialStep === 3) {
     tutorialStep3Timer++; // Count frames at step 3
-    if (manaEnergy <= 30 || 
+    if (manaEnergy <= 40 || 
         score >= 20 || 
         totalCollected >= 5 ||
         tutorialStep3Timer > 900 // 15 seconds (60 fps * 15)
     ) {
-      tutorialStep = 4; // Move to survival preparation tutorial
+      tutorialStep = 4; // Move to mana restoration tutorial
       tutorialStep4Timer = 0; // Reset step 4 timer
+      // Restore mana for the upcoming challenge
+      manaEnergy = Math.min(100, manaEnergy + 30);
+      addScoreText('+30', w / 2, h / 2 - 50, '#00ffff', 300);
     }
   }
   
   // Auto-complete tutorial after showing step 4 briefly
   if (!tutorialComplete && tutorialStep === 4) {
     tutorialStep4Timer++; // Count frames at step 4
-    if (tutorialStep4Timer > 300 || // 5 seconds (60 fps * 5)
+    if (tutorialStep4Timer > 360 || // 6 seconds (60 fps * 6) - extended time
         score >= 15 || 
         totalCollected >= 3) {
+      tutorialStep = 5; // Move to final preparation step
+      tutorialStep4Timer = 0;
+    }
+  }
+  
+  // Final tutorial step - ensure player is ready for gameplay
+  if (!tutorialComplete && tutorialStep === 5) {
+    tutorialStep4Timer++; // Reuse timer for step 5
+    if (tutorialStep4Timer > 240 || // 4 seconds
+        score >= 10) {
+      tutorialStep = 6; // Move to completion message step
+      tutorialStep4Timer = 0; // Reset timer for completion message
+    }
+  }
+  
+  // Tutorial completion message step
+  if (!tutorialComplete && tutorialStep === 6) {
+    tutorialStep4Timer++; // Count frames showing completion message
+    if (tutorialStep4Timer > 180) { // Show completion message for 3 seconds
       tutorialComplete = true;
       localStorage.setItem('tutorialComplete', 'true');
-      addScoreText('Tutorial Complete! Good luck...', w / 2, h / 2 + 30, '#00ff00', 400);
+    }
+  }
+  
+  // Tutorial completion message display
+  if (tutorialComplete && tutorialStep === 6) {
+    tutorialStep4Timer++; // Count frames showing completion message
+    if (tutorialStep4Timer > 180) { // Show for 3 seconds
+      tutorialStep = 7; // End tutorial display entirely
     }
   }
   
@@ -2496,7 +2597,7 @@ function gameLoop() {
     // Check for victory: surviving the night
     if (!gameWon && !gameOver && startTime && (Date.now() - startTime >= NIGHT_DURATION)) {
       gameWon = true;
-      addScoreText('🌅 YOU SURVIVED THE NIGHT! 🌅', w / 2, h / 2, '#ffdd00', 600);
+      addScoreText('YOU SURVIVED THE NIGHT!', w / 2, h / 2, '#ffdd00', 600);
       playTone(800, 1.0, 0.3); // Victory sound
     }
     
@@ -2523,6 +2624,19 @@ function gameLoop() {
         
         // Chance for bonus firefly at higher difficulties
         if (minutesPlayed > 2 && r() < minutesPlayed * 0.05) {
+          spawnFirefly();
+        }
+      }
+      
+      // Emergency Firefly Surge - when population gets dangerously low
+      if (otherFireflies.length <= 3 && !tutorialComplete) {
+        // During tutorial, always maintain at least 5 fireflies
+        for (let i = 0; i < 3; i++) {
+          spawnFirefly();
+        }
+      } else if (otherFireflies.length <= 5 && tutorialComplete && manaEnergy < 50) {
+        // After tutorial, surge when low on both fireflies and mana
+        for (let i = 0; i < 4; i++) {
           spawnFirefly();
         }
       }
