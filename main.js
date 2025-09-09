@@ -1,28 +1,48 @@
-// js13k-2025 Firefly Cat Game - Optimized
+// js13k-2025: The Cat & the Luminid - Clean Rebuild
+// A firefly collection game where you guide light to feed an ancient cat
 
-// Lightweight audio system
+// ===== CONSTANTS & CONFIGURATION =====
+const TAU = Math.PI * 2;
+const F = Math.floor;
+const r = Math.random;
+const sin = Math.sin;
+const cos = Math.cos;
+
+// Game balance constants
+const CFG = {
+  catEyeRadius: 40,
+  warnFrames: 180,      // 3 seconds warning before eye color change
+  flash1: 60,           // First warning flash timing
+  flash2: 120,          // Second flash timing  
+  flash3: 150,          // Third flash timing
+  shieldCooldown: 240,  // 4 seconds between shield uses
+  maxFireflies: 25,     // Population limit
+  deliveryRadius: 80,   // Delivery zone size
+};
+
+// ===== UTILITY FUNCTIONS =====
+
+// Math utilities
+const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+const hyp = (dx, dy) => Math.hypot(dx, dy);
+const d2 = (ax, ay, bx, by) => { ax -= bx; ay -= by; return ax * ax + ay * ay; };
+
+// Canvas shortcuts
+const setFill = (color) => x.fillStyle = color;
+const setStroke = (color) => x.strokeStyle = color;
+const setLineWidth = (width) => x.lineWidth = width;
+const BLACK = (alpha = 1) => `rgba(0,0,0,${alpha})`;
+
+// Game state helpers
+const getDifficulty = () => F(score / 50);
+const getSpeedMultiplier = () => 1 + (score / 200);
+const getRequiredFireflies = () => Math.max(1, F(score / 100) + 1);
+
+// ===== AUDIO SYSTEM =====
 let a; // AudioContext
 
-// Game state and utility functions
-let getDifficulty = () => F(score / 50); // Consolidated difficulty scaling
-let getSpeedMultiplier = () => 1 + (score / 200);
-let getRequiredFireflies = () => Math.max(1, F(score / 100) + 1);
-let addScoreText = (text, x, y, color = "#ffffff", life = 120) => {
-  scoreTexts.push({ text, x, y, life: 0, maxLife: life, color });
-};
-let canSummon = () => !summonOverheated && manaEnergy >= 10;
-let canShield = () => manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated;
-let useMana = (amount) => { manaEnergy = Math.max(0, manaEnergy - amount); };
-let addMana = (amount) => { manaEnergy = Math.min(100, manaEnergy + amount); };
-
-let clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-
-// Distance calculation helpers
-const hyp = (dx,dy)=>Math.hypot(dx,dy); // Use when you need actual distance
-const d2 = (ax,ay,bx,by)=>{ax-=bx; ay-=by; return ax*ax+ay*ay}; // Use for radius checks
-
-// Initialize audio only when needed
-let I = () => {
+// Initialize audio context when needed
+const initAudio = () => {
   if (!a) {
     try {
       a = new AudioContext();
@@ -34,727 +54,253 @@ let I = () => {
   return true;
 };
 
-// Simple tone generator
-let T = (f, d = .2, v = .1) => {
-  if (!audioEnabled || !I()) return;
-  let o = a.createOscillator(), g = a.createGain();
-  o.frequency.value = f;
-  g.gain.value = v;
-  g.gain.exponentialRampToValueAtTime(.01, a.currentTime + d);
-  o.connect(g).connect(a.destination);
-  o.start();
-  o.stop(a.currentTime + d);
+// Simple tone generator for sound effects
+const playTone = (freq, duration = 0.2, volume = 0.1) => {
+  if (!audioEnabled || !initAudio()) return;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.frequency.value = freq;
+  gain.gain.value = volume;
+  gain.gain.exponentialRampToValueAtTime(0.01, a.currentTime + duration);
+  osc.connect(gain).connect(a.destination);
+  osc.start();
+  osc.stop(a.currentTime + duration);
 };
 
-// Background music system - magical ambient soundscape
-let musicNodes = [];
-let musicPlaying = false;
-let musicVolume = 0.03; // Very subtle background level
+// Unified shield audio system
+let shieldHumOscillator = null;
+let shieldHumGain = null;
 
-// Create magical ambient background music
-let startMusic = () => {
-  if (!audioEnabled || !I() || musicPlaying) return;
-  musicPlaying = true;
-  musicNodes = [];
+const playShieldChime = () => {
+  if (!audioEnabled || !initAudio()) return;
   
-  // Flowing arpeggiated patterns - like Moonlight Sonata's triplets
-  let baseChord = [130.81, 164.81, 196.00, 246.94]; // C-E-G-B (Cmaj7)
-  let currentNote = 0;
-  let arpeggioPhraseStep = 0;
+  // Ethereal chime sound - two overlapping tones
+  const freq1 = 800;
+  const freq2 = 1200;
   
-  // Main flowing arpeggio - continuous triplet pattern
-  let arpeggioTimer = setInterval(() => {
-    if (!musicPlaying || !audioEnabled) return;
+  [freq1, freq2].forEach((freq, i) => {
+    const osc = a.createOscillator();
+    const gain = a.createGain();
     
-    // Create flowing 8-note phrase that repeats and varies
-    let phrasePattern = [0, 2, 1, 3, 0, 2, 1, 2]; // Indices into baseChord
-    let noteIndex = phrasePattern[arpeggioPhraseStep % phrasePattern.length];
-    let freq = baseChord[noteIndex];
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    gain.gain.value = 0.08 * (i === 0 ? 1 : 0.6); // Second tone quieter
+    gain.gain.exponentialRampToValueAtTime(0.01, a.currentTime + 0.3);
     
-    // Gentle variation every few phrases
-    if (Math.random() < 0.1) {
-      freq *= (Math.random() < 0.5) ? 1.125 : 0.875; // Occasional 9th or 7th
-    }
-    
-    // Create harp-like flowing note
-    let arp = a.createOscillator();
-    let arpGain = a.createGain();
-    let arpFilter = a.createBiquadFilter();
-    
-    arp.type = 'triangle';
-    arp.frequency.value = freq;
-    
-    arpFilter.type = 'lowpass';
-    arpFilter.frequency.value = freq * 4;
-    arpFilter.Q.value = 1.2;
-    
-    // Smooth, overlapping envelope for flow
-    arpGain.gain.value = 0;
-    arpGain.gain.linearRampToValueAtTime(musicVolume * 0.15, a.currentTime + 0.05);
-    arpGain.gain.exponentialRampToValueAtTime(musicVolume * 0.08, a.currentTime + 0.4);
-    arpGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 1.2);
-    
-    arp.connect(arpFilter).connect(arpGain).connect(a.destination);
-    arp.start();
-    arp.stop(a.currentTime + 1.2);
-    
-    arpeggioPhraseStep++;
-    
-    // Change chord progression every 16 notes for harmonic movement
-    if (arpeggioPhraseStep % 16 === 0) {
-      let chordShift = [0, 2, 4, 5][Math.floor(arpeggioPhraseStep / 16) % 4]; // I-ii-iii-IV progression
-      baseChord = [130.81, 164.81, 196.00, 246.94].map(f => f * Math.pow(2, chordShift / 12));
-    }
-  }, 320); // Fast enough for flow, ~188 BPM triplets
+    osc.connect(gain).connect(a.destination);
+    osc.start();
+    osc.stop(a.currentTime + 0.3);
+  });
+};
+
+const startShieldHum = () => {
+  if (!audioEnabled || !initAudio() || shieldHumOscillator) return;
   
-  // Overlapping sustained strings - warm pad that breathes
-  let stringPhase = 0;
-  let stringTimer = setInterval(() => {
-    if (!musicPlaying || !audioEnabled) return;
-    
-    // Overlapping string chords that fade in and out smoothly
-    let chordFreqs = [
-      [130.81, 164.81, 196.00], // C major
-      [123.47, 155.56, 185.00], // B minor
-      [146.83, 184.99, 220.00], // D major
-      [138.59, 174.61, 207.65], // C# minor
-    ];
-    
-    let chord = chordFreqs[stringPhase % chordFreqs.length];
-    
-    chord.forEach((freq, i) => {
-      let string = a.createOscillator();
-      let stringGain = a.createGain();
-      let stringFilter = a.createBiquadFilter();
-      
-      string.type = 'sawtooth';
-      string.frequency.value = freq;
-      
-      stringFilter.type = 'lowpass';
-      stringFilter.frequency.value = freq * 2.5;
-      stringFilter.Q.value = 0.8;
-      
-      // Long, breathing envelope
-      stringGain.gain.value = 0;
-      stringGain.gain.linearRampToValueAtTime(musicVolume * (0.06 - i * 0.01), a.currentTime + 2);
-      stringGain.gain.linearRampToValueAtTime(musicVolume * (0.04 - i * 0.008), a.currentTime + 6);
-      stringGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 8);
-      
-      // Subtle vibrato for organic feel
-      let stringLfo = a.createOscillator();
-      let stringLfoGain = a.createGain();
-      stringLfo.frequency.value = 0.12 + i * 0.02;
-      stringLfoGain.gain.value = 0.6;
-      stringLfo.connect(stringLfoGain).connect(string.frequency);
-      stringLfo.start();
-      stringLfo.stop(a.currentTime + 8);
-      
-      string.connect(stringFilter).connect(stringGain).connect(a.destination);
-      string.start();
-      string.stop(a.currentTime + 8);
+  shieldHumOscillator = a.createOscillator();
+  shieldHumGain = a.createGain();
+  
+  shieldHumOscillator.frequency.value = 80; // Deep space-like hum
+  shieldHumOscillator.type = 'sine';
+  shieldHumGain.gain.value = 0.03; // Atmospheric volume
+  
+  shieldHumOscillator.connect(shieldHumGain).connect(a.destination);
+  shieldHumOscillator.start();
+};
+
+const stopShieldHum = () => {
+  if (shieldHumOscillator) {
+    shieldHumOscillator.stop();
+    shieldHumOscillator = null;
+    shieldHumGain = null;
+  }
+};
+
+// Unified shield audio handler - determines what sound to play
+const handleShieldAudio = (isHoldAction = false) => {
+  if (isHoldAction) {
+    // For holds: just start the deep hum, no chime
+    startShieldHum();
+  } else {
+    // For taps: just play the chime, no hum
+    playShieldChime();
+  }
+};
+
+// ===== GAME STATE VARIABLES =====
+
+// Canvas and rendering
+let c, x, w, h;
+
+// Mouse state
+let mx = 0, my = 0, lastMx = 0, lastMy = 0;
+let mousePressed = false, mouseDownTime = 0;
+let mouseMoving = false, lastMovementTime = 0;
+let mouseInBounds = true;
+
+// Player state
+let charging = false;
+let glowPower = 0, flashTimer = 0, quickFlashPower = 0;
+let manaEnergy = 100;
+let summonHeat = 0, summonOverheated = false, overheatStunned = false;
+
+// Shield system
+let shieldActive = false, shieldCooldown = 0, lastShieldTime = 0;
+
+// Input state tracking
+let spacePressed = false;
+let spaceActivationTime = 0;
+let shieldActivationTime = 0; // Track which activation we're dealing with
+let hasPlayedChime = false;
+const HOLD_THRESHOLD = 150; // ms - anything longer is considered a "hold"
+
+// Game state
+let score = 0, gameStarted = true, gameOver = false;
+let gameOverTime = null; // Stores the time when game ended for frozen display
+let totalCollected = 0, totalLost = 0;
+let deliveryStreak = 0, bestStreak = 0; // New streak tracking
+let startTime = null, runStartTime = null;
+let audioEnabled = true, pageVisible = true;
+let lastSpawnTime = 0; // For progressive difficulty spawning
+
+// Night survival system
+const NIGHT_DURATION = 600000; // 10 minutes = 600,000 milliseconds
+let gameWon = false;
+
+// Cat system
+let catEyeColor = "gold", catEyeChangeTimer = 0, nextColorChangeTime = 600;
+let lastWarningState = false, colorChangesEnabled = true;
+let mouseNearCat = false, catProximity = 0;
+
+// Tutorial system
+let tutorialComplete = localStorage.getItem('tutorialComplete') === 'true';
+let tutorialStep = 0, firstDeliveryMade = false, tutorialTimer = 0;
+let tutorialStep3Timer = 0; // Track time spent on step 3
+let showHelp = false;
+let showTutorialElements = false; // Show ring and count during tutorial only
+
+// Game objects
+let particles = [];
+let otherFireflies = [];
+let scoreTexts = [];
+let clickSparkles = [];
+let stars = [];
+let catEyes = [];
+
+// ===== STAR BACKGROUND SYSTEM =====
+
+// Initialize star field
+const initStars = () => {
+  stars = [];
+  for (let i = 0; i < 150; i++) {
+    stars.push({
+      x: r() * w,
+      y: r() * h,
+      size: r() * 2 + 0.5,
+      alpha: r() * 0.8 + 0.2,
+      twinkleSpeed: r() * 0.02 + 0.01,
+      twinkleOffset: r() * TAU,
     });
-    
-    stringPhase++;
-  }, 6000); // Slow chord changes for breathing
-  
-  // Melodic counter-line - like a gentle flute melody weaving through
-  let melodyPhrase = [261.63, 293.66, 329.63, 349.23, 392.00, 329.63, 293.66, 261.63]; // C-D-E-F-G-E-D-C
-  let melodyStep = 0;
-  let melodyTimer = setInterval(() => {
-    if (!musicPlaying || !audioEnabled) return;
-    
-    if (Math.random() < 0.7) { // Not every beat, for breathing
-      let freq = melodyPhrase[melodyStep % melodyPhrase.length];
-      
-      // Gentle variation
-      if (Math.random() < 0.15) {
-        freq *= 1.059; // Occasional sharp for interest
-      }
-      
-      let melody = a.createOscillator();
-      let melodyGain = a.createGain();
-      let melodyFilter = a.createBiquadFilter();
-      
-      melody.type = 'sine';
-      melody.frequency.value = freq;
-      
-      melodyFilter.type = 'bandpass';
-      melodyFilter.frequency.value = freq * 1.5;
-      melodyFilter.Q.value = 2;
-      
-      // Smooth, singing envelope
-      melodyGain.gain.value = 0;
-      melodyGain.gain.linearRampToValueAtTime(musicVolume * 0.08, a.currentTime + 0.1);
-      melodyGain.gain.linearRampToValueAtTime(musicVolume * 0.06, a.currentTime + 0.8);
-      melodyGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 2);
-      
-      melody.connect(melodyFilter).connect(melodyGain).connect(a.destination);
-      melody.start();
-      melody.stop(a.currentTime + 2);
-      
-      melodyStep++;
-    }
-  }, 960); // Slower than arpeggio for counterpoint
-  
-  // Subtle crystalline sparkles - rare, magical accents
-  let sparkleTimer = setInterval(() => {
-    if (!musicPlaying || !audioEnabled) return;
-    
-    if (Math.random() < 0.2) {
-      let sparkleFreq = [523.25, 659.25, 783.99, 1046.5][Math.floor(Math.random() * 4)];
-      
-      let sparkle = a.createOscillator();
-      let sparkleGain = a.createGain();
-      sparkle.type = 'sine';
-      sparkle.frequency.value = sparkleFreq;
-      
-      sparkleGain.gain.value = musicVolume * 0.03;
-      sparkleGain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 3);
-      
-      sparkle.connect(sparkleGain).connect(a.destination);
-      sparkle.start();
-      sparkle.stop(a.currentTime + 3);
-    }
-  }, 4000);
-  
-  musicNodes.push({timer: arpeggioTimer}, {timer: stringTimer}, {timer: melodyTimer}, {timer: sparkleTimer});
+  }
 };
 
-let stopMusic = () => {
-  if (!musicPlaying) return;
-  musicPlaying = false;
+// Render animated star background
+const drawStars = (now) => {
+  setFill("#0a0a1a"); // Deep night background
+  x.fillRect(0, 0, w, h);
   
-  musicNodes.forEach(node => {
-    if (node.osc) node.osc.stop();
-    if (node.lfo) node.lfo.stop();
-    if (node.timer) clearInterval(node.timer);
-  });
-  musicNodes = [];
-};
-
-// Music volume control
-let setMusicVolume = (vol) => {
-  musicVolume = vol;
-  musicNodes.forEach(node => {
-    if (node.gain) {
-      node.gain.gain.value = musicVolume * (node.gain.gain.value / musicVolume);
-    }
+  stars.forEach(star => {
+    // Gentle twinkling animation
+    const twinkle = sin(now * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
+    const alpha = star.alpha * twinkle;
+    
+    setFill(`rgba(255, 255, 255, ${alpha})`);
+    x.beginPath();
+    x.arc(star.x, star.y, star.size, 0, TAU);
+    x.fill();
   });
 };
 
-const c = document.getElementById("c"),
-  x = c.getContext("2d"),
-  TAU = Math.PI * 2,
-  M = Math, // Math shortcut
-  r = M.random, // Math.random shortcut
-  F = M.floor; // Math.floor shortcut
+// ===== FOREST BACKGROUND SYSTEM =====
 
-// Hoisted whisker constants for better performance and compression
+// Draw atmospheric forest silhouettes
+const drawForest = () => {
+  // Ground layer
+  setFill("#1a1a0a");
+  x.fillRect(0, h * 0.8, w, h * 0.2);
+  
+  // Tree silhouettes - simple but atmospheric
+  setFill("#0d0d0d");
+  
+  // Left side trees
+  drawTree(w * 0.05, h * 0.8, 80, 120);
+  drawTree(w * 0.15, h * 0.75, 100, 150);
+  drawTree(w * 0.25, h * 0.82, 60, 100);
+  
+  // Right side trees
+  drawTree(w * 0.75, h * 0.85, 70, 110);
+  drawTree(w * 0.85, h * 0.78, 90, 140);
+  drawTree(w * 0.95, h * 0.83, 65, 95);
+  
+  // Distant mountain silhouettes
+  setFill("#0f0f0f");
+  x.beginPath();
+  x.moveTo(0, h * 0.6);
+  x.lineTo(w * 0.3, h * 0.4);
+  x.lineTo(w * 0.7, h * 0.5);
+  x.lineTo(w, h * 0.3);
+  x.lineTo(w, h);
+  x.lineTo(0, h);
+  x.closePath();
+  x.fill();
+};
+
+// Simple tree silhouette helper
+const drawTree = (x_pos, y_pos, width, height) => {
+  // Trunk
+  const trunkWidth = width * 0.2;
+  x.fillRect(x_pos - trunkWidth / 2, y_pos, trunkWidth, height * 0.3);
+  
+  // Crown - organic irregular shape
+  x.beginPath();
+  x.arc(x_pos, y_pos - height * 0.2, width * 0.6, 0, TAU);
+  x.fill();
+  
+  // Additional crown layers for depth
+  x.beginPath();
+  x.arc(x_pos - width * 0.2, y_pos - height * 0.4, width * 0.4, 0, TAU);
+  x.fill();
+  
+  x.beginPath();
+  x.arc(x_pos + width * 0.15, y_pos - height * 0.35, width * 0.45, 0, TAU);
+  x.fill();
+};
+
+// ===== CAT SYSTEM =====
+
+// Whisker constants from original
 const WHISKERS = [
   { len: 110, yOff: 45, spread: -25 }, // top
   { len: 120, yOff: 55, spread: 0 },   // middle (longest)
   { len: 110, yOff: 65, spread: 25 }   // bottom
 ];
-const { sin, cos } = Math;
 
-// Canvas state batching to reduce redundant style changes
-let lastBlur = 0, lastShadow = '', lastFill = '', lastStroke = '', lastLineWidth = 0;
-const setBlur = (b, c) => { if (b !== lastBlur || c !== lastShadow) { x.shadowBlur = b; x.shadowColor = c; lastBlur = b; lastShadow = c; } };
-const setFill = (c) => { if (c !== lastFill) { x.fillStyle = c; lastFill = c; } };
-const setStroke = (c) => { if (c !== lastStroke) { x.strokeStyle = c; lastStroke = c; } };
-const setLineWidth = (w) => { if (w !== lastLineWidth) { x.lineWidth = w; lastLineWidth = w; } };
-
-// Color helper for better compression
-const RGBA = (r, g, b, a) => `rgba(${r},${g},${b},${a})`;
-
-// Common colors
-const WHITE = (a) => RGBA(255, 255, 255, a);
-const BLACK = (a) => RGBA(0, 0, 0, a);
-const LIGHT_GRAY = (a) => RGBA(200, 200, 200, a);
-const GREEN = (a) => RGBA(0, 255, 0, a);
-const LIGHT_GREEN = (a) => RGBA(0, 255, 100, a);
-const YELLOW = (a) => RGBA(255, 255, 0, a);
-const RED = (a) => RGBA(255, 0, 0, a);
-const BLUE = (a) => RGBA(150, 200, 255, a);
-
-// Sparkle color table [fillColor, shadowColor]
-const SPK = [['255,255,136','#ffff88'], ['255,255,255','white']];
-
-// Input hold helper - 150ms threshold for shield activation
-const held150 = (now) => (mousePressed && now - mouseDownTime >= 150) || (spacePressed && now - spaceDownTime >= 150);
-
-// Configuration constants for tuning behavior
-const CFG = {
-  warnFrames: 180,     // 3-second warning period (180 frames at 60fps)
-  flash1: 60,          // Flash 1 timing (0-60)
-  flash2: 120,         // Flash 2 timing (60-120) 
-  flash3: 150,         // Flash 3 timing (120-150)
-  shieldCooldown: 180, // 3-second shield cooldown
-  deliveryRadius: 120, // Cat nose proximity detection (squared: 120*120)
-};
-
-// Firefly rendering helpers
-const drawBody = (f) => {
-  setFill(f.isManaFirefly ? "#2d1810" : "#333");
-  x.beginPath();
-  x.arc(f.x, f.y, f.isManaFirefly ? 4.5 : 3.5, 0, TAU);
-  x.fill();
-};
-
-const radialGlow = (fx, fy, radius, stops) => {
-  let grad = x.createRadialGradient(fx, fy, 0, fx, fy, radius);
-  for (let i = 0; i < stops.length; i += 2) {
-    grad.addColorStop(stops[i], stops[i + 1]);
-  }
-  return grad;
-};
-
-const drawGlow = (f, now) => {
-  if (f.isManaFirefly) {
-    // Special mana firefly glow with heartbeat
-    let heartbeatPulse = sin(f.manaHeartbeat) * 0.3 + 0.7;
-    let baseGlow = sin(f.glowPhase * 0.5) * 0.2 + 0.8;
-    let manaGlow = heartbeatPulse * baseGlow * 1.5;
-    
-    setFill(radialGlow(f.x, f.y, 25 * manaGlow, [
-      0, `rgba(255, 180, 0, ${manaGlow})`,
-      0.3, `rgba(255, 140, 0, ${manaGlow * 0.8})`,
-      0.7, `rgba(255, 100, 0, ${manaGlow * 0.4})`,
-      1, `rgba(255, 60, 0, 0)`
-    ]));
-    x.beginPath();
-    x.arc(f.x, f.y, 25 * manaGlow, 0, TAU);
-    x.fill();
-    return;
-  }
-
-  // Normal firefly glow calculation (reuse existing logic)
-  let g1, g2, glow;
-  
-  // Base glow calculation
-  g1 = sin(f.flashTimer * 2) * 0.3 + 0.7;
-  g2 = sin(f.glowPhase * 0.7) * 0.2 + 0.8;
-  glow = g1 * g2;
-  
-  // Flash logic
-  f.nextFlashTime = (f.nextFlashTime || 120) - 1;
-  if (f.nextFlashTime <= 0) {
-    let flashIntensity = sin(f.flashTimer * 8) * 0.5 + 0.5;
-    glow += flashIntensity * 0.4;
-    if (f.flashTimer > 6) {
-      f.flashTimer = 0;
-      f.nextFlashTime = M.random() * 300 + 180;
-    }
-  }
-  
-  // Summon glow
-  if (f.summonGlow > 0) {
-    glow += (f.summonGlow / 120) * 1.5;
-  }
-
-  // Captured firefly special handling
-  if (f.captured) {
-    let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
-    let isWarning = timeUntilChange <= 60;
-    
-    if (isWarning && timeUntilChange <= 30) {
-      glow = 0.3 + Math.abs(sin(f.flashTimer * 8) * cos(f.flashTimer * 5)) * 0.7;
-    } else if (isWarning) {
-      glow = 0.5 + sin(f.flashTimer * 4) * cos(f.flashTimer * 3) * 0.5;
-    } else {
-      glow = 0.8 + sin(f.flashTimer * 2) * 0.2;
-    }
-  }
-
-  // Draw glow if bright enough
-  if (glow > 0.3) {
-    let size = 3 + glow * 4;
-    let blur = 12 + glow * 20;
-    let color;
-
-    if (f.captured) {
-      color = getCapturedFireflyColor(glow);
-    } else if (f.type === "red") {
-      color = `rgb(255,${80 + glow * 100},80)`;
-    } else {
-      color = `rgb(${100 + glow * 100},255,${80 + glow * 100})`;
-    }
-
-    setBlur(blur, color);
-    setFill(color);
-    x.beginPath();
-    x.arc(f.x, f.y, size, 0, TAU);
-    x.fill();
-    setBlur(0, ''); // Reset blur
-    
-    // Shield effect for captured fireflies
-    if (shieldActive && f.captured) {
-      let shieldTime = now - lastShieldTime;
-      let shieldRadius = 15 + sin(shieldTime * 0.008 + f.x * 0.01) * 2;
-      let shieldAlpha = 0.2 + sin(shieldTime * 0.015 + f.y * 0.01) * 0.1;
-      
-      x.save();
-      x.globalAlpha = shieldAlpha;
-      setStroke("rgba(100, 150, 255, 0.6)");
-      setLineWidth(2);
-      x.setLineDash([4, 2]);
-      x.lineDashOffset = -shieldTime * 0.03;
-      x.beginPath();
-      x.arc(f.x, f.y, shieldRadius, 0, TAU);
-      x.stroke();
-      x.setLineDash([]);
-      x.restore();
-    }
-  }
-};
-
-let w,
-  h,
-  mx = 0,
-  my = 0,
-  glowPower = 0,
-  charging = false,
-  mouseMoving = false, // Track if mouse is currently moving
-  lastMovementTime = 0, // When mouse last moved
-  movementBuffer = 300, // Reduced to 0.3 seconds for quicker response
-  maxed = false,
-  flashTimer = 0,
-  quickFlashPower = 0,
-  floatTimer = 0,
-  lastMx = 0,
-  lastMy = 0,
-  particles = [],
-  otherFireflies = [],
-  score = 0,
-  catEyes = [],
-  stars = [],
-  orbitingFireflies = [], // Fireflies being absorbed by the cat
-  scoreTexts = [],
-  audioEnabled = true,
-  gameOver = false,
-  gameStarted = true,
-  catEyeColor = "gold",
-  catEyeChangeTimer = 0,
-  nextColorChangeTime = 600 + F(r() * 300),
-  startTime = null,
-  lastWarningState = false,
-  totalCollected = 0,  // Total fireflies collected across all runs
-  totalLost = 0,       // Total fireflies lost across all runs
-  runStartTime = null, // Start time of current run
-  colorChangesEnabled = true, // Enable eye color changes immediately
-  collectedCount = 0,  // Count collected fireflies
-  summonHeat = 0, // Heat buildup from summoning (0-100)
-  summonOverheated = false, // Whether system is overheated
-  overheatCooldown = 0, // Frames until overheating ends
-  overheatStunned = false, // Player movement disabled during overheat
-  mouseNearCat = false, // Track if mouse is near cat's face
-  catProximity = 0,     // How close mouse is to cat (0-1)
-  mouseInBounds = true, // Track if mouse is within canvas bounds
-  
-  // Tutorial system - cleaner implementation
-  tutorialComplete = localStorage.getItem('tutorialComplete') === 'true',
-  tutorialStep = 0,     // Current tutorial step
-  firstDeliveryMade = false, // Track first successful delivery
-  tutorialTimer = 0,    // Timer for tutorial animations
-  showHelp = false,     // Help menu state
-  
-  // Page visibility tracking for music control
-  pageVisible = true;
-  
-  // Input state tracking  
-  mousePressed = false, spacePressed = false,
-  mouseDownTime = 0, spaceDownTime = 0,
-  
-  // Enhanced summoning visual effects - simplified
-  clickSparkles = [],   // Simple sparkle effects at click points
-  manaEnergy = 100,     // Energy for mana (0-100) - used for summoning and shielding
-  shieldActive = false, // Whether shield is currently active
-  shieldCooldown = 0,   // Cooldown after shield use
-  lastShieldTime = 0,   // Track when shield was last used for forgiveness
-  manaFlashTimer = 0;   // Red flash when trying to use abilities with 0 mana
-
-// Helper function for cat eye color logic - reduces repeated code
-function getCatEyeColors() {
+// Helper function for cat eye color logic
+const getCatEyeColors = () => {
   switch (catEyeColor) {
     case "gold": return { hex: "#ffdd00", r: 255, g: 221, b: 0 };
     case "purple": return { hex: "#8844ff", r: 136, g: 68, b: 255 };
     case "pink": return { hex: "#ff44aa", r: 255, g: 68, b: 170 };
-    default: return { hex: "#ffdd00", r: 255, g: 221, b: 0 }; // fallback to gold
+    default: return { hex: "#ffdd00", r: 255, g: 221, b: 0 };
   }
-}
+};
 
-function getCapturedFireflyColor(glow) {
-  let colors = getCatEyeColors();
-  
-  switch (catEyeColor) {
-    case "gold":
-      // Gold: use red channel, boost green, zero blue
-      return `rgb(${colors.r},${180 + glow * 75},0)`;
-    case "purple":
-      // Purple: boost red, keep low green, use blue channel
-      return `rgb(${180 + glow * 75},80,${colors.b})`;
-    case "pink":
-      // Pink: use red channel, boost green, use blue channel
-      return `rgb(${colors.r},${80 + glow * 100},${colors.b})`;
-    default:
-      // Fallback green
-      return `rgb(${100 + glow * 100},255,${80 + glow * 100})`;
-  }
-}
-
-function R() {
-  w = innerWidth;
-  h = innerHeight;
-  c.width = w;
-  c.height = h;
-  initBackground();
-}
-
-function initBackground() {
+// Initialize cat eyes
+const initCatEyes = () => {
   catEyes = [{ x: w / 2, y: h * 0.1, blinkTimer: 0, isBlinking: false, blinkDuration: 0 }];
-
-  // Simple stars
-  stars = [];
-  for (let i = 0; i < 50; i++) {
-    stars.push({
-      x: r() * w,
-      y: r() * h * 0.3,
-      size: r() * 2 + 1,
-      twinkle: r() * TAU,
-      twinkleSpeed: 0.02 + r() * 0.03,
-    });
-  }
-}
-
-function drawBackground() {
-  // Simple dark sky
-  setFill("#050510");
-  x.fillRect(0, 0, w, h * 0.3);
-  
-  // Ground
-  setFill("#0c0c10"); 
-  x.fillRect(0, h * 0.3, w, h);
-  
-  // Simple stars
-  for (let i = 0; i < stars.length; i++) {
-    let star = stars[i];
-    star.twinkle += star.twinkleSpeed;
-    let alpha = 0.3 + (sin(star.twinkle) * 0.5 + 0.5) * 0.7;
-    setFill(WHITE(alpha));
-    x.fillRect(star.x, star.y, star.size, star.size);
-  }
-}
-
-function drawGrass() {
-  // Simple ground line
-  setFill("#0c0c10");
-  x.fillRect(0, h - 10, w, 10);
-}
-
-// Cat Eyes System
-function updateCatEyes(now) {
-  // Progress color timer
-  catEyeChangeTimer++;
-  
-  // Check for warning state and play warning sound when it starts
-  let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
-  let isWarning = timeUntilChange <= CFG.warnFrames; // Extended warning period (3 seconds for Mario Kart-style countdown)
-  
-  if (isWarning && !lastWarningState && otherFireflies.some(f => f.captured)) {
-    // Warning just started and player has fireflies - play warning sound
-    T(1000, .1, .08); // Color change warning sound
-  }
-  lastWarningState = isWarning;
-  
-  if (catEyeChangeTimer >= nextColorChangeTime) {
-    // Check if shield is active OR was recently active (forgiving window)
-    let recentShieldUse = now - (lastShieldTime || 0) < 2000; // 2 second grace window
-    let capturedFireflies = otherFireflies.filter(f => f.captured);
-    
-    if (shieldActive || recentShieldUse) {
-      // Calculate timing quality based on Mario Kart-style 3-flash countdown
-      let framesUntilChange = nextColorChangeTime - catEyeChangeTimer;
-      let warningPhase = CFG.warnFrames - framesUntilChange; // How far into the 3-second warning we are
-      
-      let protectionRate;
-      let timingQuality;
-      
-      // Perfect timing: shield activated during flash 2 (frames 60-120 of warning)
-      if (warningPhase >= CFG.flash1 && warningPhase <= CFG.flash2) {
-        protectionRate = 1.0; // 100% protection - Mario Kart style perfect timing!
-        timingQuality = "PERFECT";
-      } 
-      // Great timing: shield activated during flash 1 or early flash 3 (frames 0-60 or 120-150)
-      else if ((warningPhase >= 0 && warningPhase <= CFG.flash1) || (warningPhase >= CFG.flash2 && warningPhase <= CFG.flash3)) {
-        protectionRate = 0.85; // 85% protection  
-        timingQuality = "GREAT";
-      } 
-      // Good timing: shield activated during late flash 3 or just before change (frames 150-180)
-      else if (warningPhase >= CFG.flash3 && warningPhase <= CFG.warnFrames) {
-        protectionRate = 0.7; // 70% protection
-        timingQuality = "GOOD";
-      } 
-      // Late timing: shield activated too early (before warning) or after change
-      else {
-        protectionRate = 0.5; // 50% protection
-        timingQuality = "LATE";
-      }
-      
-      let firefliesLost = F(capturedFireflies.length * (1 - protectionRate));
-      let firefliesProtected = capturedFireflies.length - firefliesLost;
-      
-      if (firefliesLost > 0) {
-        score -= firefliesLost; // Still lose some points
-        
-        // Remove some captured fireflies (the unprotected ones)
-        let lostCount = 0;
-        otherFireflies.forEach(f => {
-          if (f.captured && lostCount < firefliesLost) {
-            f.captured = false;
-            lostCount++;
-          }
-        });
-      }
-      
-      shieldActive = false; // Shield is consumed
-      shieldCooldown = CFG.shieldCooldown + getDifficulty() * 4; // Progressive cooldown
-      
-      // Different sounds for different timing quality
-      if (timingQuality === "PERFECT") {
-        T(300, .2, .15); // Higher pitch perfect sound
-      } else if (timingQuality === "GREAT") {
-        T(250, .25, .12); // Good timing sound
-      } else {
-        T(180, .25, .1); // Standard shield block sound
-      }
-      
-      // Show shield success text with timing feedback
-      let protectionText = firefliesLost === 0 ? `${timingQuality} SHIELD!` :
-        `${timingQuality}: ${firefliesProtected} SAVED, ${firefliesLost} LOST`;
-      
-      // Color based on timing quality
-      let colors = ["#ff8844", "#ffdd00", "#88ff44", "#00ff88"]; // Late, Good, Great, Perfect
-      let colorIndex = ["LATE", "GOOD", "GREAT", "PERFECT"].indexOf(timingQuality);
-      let textColor = colors[colorIndex] || "#ffaa00";
-      
-      addScoreText(protectionText, w / 2, h / 2 - 100, textColor, 180);
-    } else {
-      // Normal penalty when no shield active
-      if (capturedFireflies.length > 0) {
-        score -= capturedFireflies.length; // -1 point per captured firefly
-        
-        // Show penalty text with educational feedback
-        addScoreText(`NO SHIELD! -${capturedFireflies.length}`, mx, my - 50, "#ff4444", 150);
-        
-        // Force release all captured fireflies and stop charging
-        charging = false; // Force player to drop fireflies
-        glowPower = 0; // Reset glow power
-        totalLost += capturedFireflies.length; // Track total lost
-        
-        // Create small dispersal effect for lost fireflies
-        capturedFireflies.forEach(f => {
-          for (let i = 0; i < 3; i++) {
-            particles.push({
-              x: f.x,
-              y: f.y,
-              vx: (r() - 0.5) * 3,
-              vy: (r() - 0.5) * 3,
-              size: 1 + r(),
-              life: 0,
-              maxLife: 20 + r() * 15,
-              color: "#ff6666", // Reddish for penalty
-              alpha: 0.7,
-              glow: true,
-            });
-          }
-        });
-        
-        // Remove some of the lost fireflies to prevent accumulation
-        // Keep a reasonable population but remove some to prevent lag
-        let firefliesKept = F(capturedFireflies.length * 0.5); // Keep 50% of lost fireflies
-        let firefliesRemoved = capturedFireflies.length - firefliesKept;
-        
-        // Remove the fireflies that are truly lost
-        otherFireflies = otherFireflies.filter(f => !f.captured);
-        
-        // Respawn only the kept fireflies in new locations (fresh state)
-        for (let i = 0; i < firefliesKept; i++) {
-          spawnFirefly(); // Creates fresh fireflies without accumulated velocity
-        }
-        
-        T(150, .3, .1); // Penalty sound
-      }
-    }
-    
-    // Change to a new random color for visual interest (no green)
-    let colors = ["pink", "purple", "gold"];
-    let newColor;
-    do {
-      newColor = colors[F(r() * colors.length)];
-    } while (newColor === catEyeColor); // Ensure it's different from current
-    
-    catEyeColor = newColor;
-    catEyeChangeTimer = 0;
-    lastWarningState = false; // Reset warning state for next cycle
-    
-    // Progressive difficulty curve based on score and time
-    let gameTime = now - (startTime || now);
-    let gameMinutes = gameTime / 60000;
-    
-    // Early Game (0-1 min): Predictable, forgiving
-    let minTime = 480; // 8 seconds base
-    let maxTime = 900; // 15 seconds base
-    
-    if (gameMinutes > 1) {
-      // Mid Game (1-3 mins): Speed up and add unpredictability
-      let midGameFactor = Math.min(1, (gameMinutes - 1) / 2); // 0 to 1 over 2 minutes
-      minTime = F(480 - (240 * midGameFactor)); // Down to 4 seconds
-      maxTime = F(900 - (400 * midGameFactor)); // Down to 8.3 seconds
-      
-      // Add fake-outs and double shifts
-      if (r() < 0.1 + (midGameFactor * 0.1)) {
-        // 10-20% chance of very short interval (fake-out)
-        minTime = F(minTime * 0.5);
-        maxTime = F(maxTime * 0.6);
-      }
-    }
-    
-    if (gameMinutes > 3) {
-      // Late Game (3+ mins): Chaos mode
-      let lateGameFactor = Math.min(1, (gameMinutes - 3) / 2); // 0 to 1 over next 2 minutes
-      minTime = F(180 - (60 * lateGameFactor)); // Down to 2 seconds
-      maxTime = F(420 - (120 * lateGameFactor)); // Down to 5 seconds
-      
-      // Higher chance of instant double-shifts
-      if (r() < 0.15 + (lateGameFactor * 0.15)) {
-        nextColorChangeTime = 60 + F(r() * 120); // 1-3 seconds
-        return; // Skip normal calculation
-      }
-    }
-    
-    // Random time between calculated min and max
-    nextColorChangeTime = minTime + F(r() * (maxTime - minTime));
-  }
-
-  catEyes.forEach((eye) => {
-    eye.blinkTimer++;
-    // Increased blink interval to 1200 frames (20 seconds at 60fps) to make it less frequent
-    if (!eye.isBlinking && eye.blinkTimer > 1200) {
-      eye.isBlinking = true;
-      eye.blinkDuration = 10;
-      eye.blinkTimer = 0;
-    } else if (eye.isBlinking) {
-      eye.blinkDuration--;
-      if (eye.blinkDuration <= 0) {
-        eye.isBlinking = false;
-      }
-    }
-  });
-}
+};
 
 // Optimized whisker drawing function
-// dir: -1 (left) or 1 (right), eyeX/eyeY: eye center, twitch: whiskerTwitch, now: cached time
-function drawWhiskers(dir, eyeX, eyeY, twitch, now) {
+const drawWhiskers = (dir, eyeX, eyeY, twitch, now) => {
   const baseX = eyeX + dir * 130;
   
   for (let i = 0; i < WHISKERS.length; i++) {
@@ -776,1709 +322,2137 @@ function drawWhiskers(dir, eyeX, eyeY, twitch, now) {
       const sx = baseX + dir * (w.len * pos);
       const sy2 = sy + w.spread * pos;
 
-      // Unified twinkle formula (no side-specific offsets needed)
-      let tw = sin(now * 0.001 + s * 2.2 + i * 3.1) * 0.5 + 0.5;
-      tw += catProximity * 0.5; // Keep proximity boost
-      const alpha = 0.3 + Math.min(0.7, tw * 0.7);
+      // Enhanced twinkle formula with proximity responsiveness
+      let tw = sin(now * 0.002 + s * 2.2 + i * 3.1) * 0.5 + 0.5; // Faster base twinkle
+      const proximityTwinkle = sin(now * 0.003 + s * 1.8 + i * 2.4) * 0.4 + 0.6; // Additional layer
+      tw = (tw + proximityTwinkle) * 0.5; // Combine effects
+      tw += catProximity * 0.7; // Stronger proximity boost
+      
+      const alpha = 0.2 + Math.min(0.8, tw * 0.8); // Brighter range
 
-      // Draw star
-      setFill(WHITE(alpha));
+      // Draw star with enhanced glow
+      setFill(`rgba(255, 255, 255, ${alpha})`);
       x.beginPath();
       x.arc(sx, sy2, 1.5, 0, TAU);
       x.fill();
 
-      // Subtle glow for brighter stars
-      if (tw > 0.7) {
-        setBlur(3, WHITE(0.5));
+      // Enhanced glow for twinkling stars
+      if (tw > 0.6 || catProximity > 0.3) {
+        const glowIntensity = Math.min(1, tw + catProximity * 0.5);
+        x.shadowBlur = 4 + glowIntensity * 3;
+        x.shadowColor = `rgba(255, 255, 255, ${0.6 * glowIntensity})`;
         x.beginPath();
-        x.arc(sx, sy2, 0.75, 0, TAU);
+        x.arc(sx, sy2, 0.75 + glowIntensity * 0.5, 0, TAU);
         x.fill();
-        setBlur(0, ''); // Reset to avoid affecting later draws
+        x.shadowBlur = 0; // Reset
       }
     }
   }
-}
+};
 
-function drawCatEyes(now) {
-  if (catEyes.length > 0) {
-    let eye = catEyes[0];
-    let eyeX = eye.x;
-    let eyeY = eye.y;
+// Draw the complete cat face with eyes, nose, and whiskers
+const drawCatEyes = (now) => {
+  if (catEyes.length === 0) return;
+  
+  const eye = catEyes[0];
+  const eyeX = eye.x;
+  const eyeY = eye.y;
 
-    // Calculate mouse proximity to cat's face for interactive effects
-    let noseX = w / 2;
-    let noseY = h * 0.2;
-    let dx = mx - noseX;
-    let dy = my - noseY;
-    let distSq = dx*dx + dy*dy;
-    catProximity = Math.max(0, 1 - hyp(dx, dy) / 150); // 0-1 based on distance
-    mouseNearCat = distSq < CFG.deliveryRadius*CFG.deliveryRadius; // Use squared distance for comparison
+  // Calculate mouse proximity to cat's face for interactive effects
+  const noseX = w / 2;
+  const noseY = h * 0.2;
+  const dx = mx - noseX;
+  const dy = my - noseY;
+  const distSq = dx * dx + dy * dy;
+  catProximity = Math.max(0, 1 - hyp(dx, dy) / 150); // 0-1 based on distance
+  mouseNearCat = distSq < CFG.deliveryRadius * CFG.deliveryRadius;
 
-    // Check if we're in the warning period (last 2 seconds = 120 frames)
-    let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
-    let isWarning = timeUntilChange <= 120;
-    let flashIntensity = 1;
+  // Check if we're in the warning period (but skip warning during early tutorial)
+  const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+  const isWarning = timeUntilChange <= CFG.warnFrames && (tutorialComplete || tutorialStep >= 2);
+  let flashIntensity = 1;
+  
+  if (isWarning && otherFireflies.some(f => f.captured)) {
+    const flashPhase = CFG.warnFrames - timeUntilChange;
+    const shouldFlash = 
+      (flashPhase >= CFG.flash1 && flashPhase < CFG.flash1 + 20) ||
+      (flashPhase >= CFG.flash2 && flashPhase < CFG.flash2 + 20) ||
+      (flashPhase >= CFG.flash3 && flashPhase < CFG.flash3 + 20);
     
-    if (isWarning) {
-      // More subtle flash effect - reduced intensity range
-      let flashSpeed = Math.max(0.3, timeUntilChange / 120); // Faster as time runs out
-      flashIntensity = 0.7 + 0.3 * (sin(catEyeChangeTimer * (1 / flashSpeed)) * 0.5 + 0.5);
+    if (shouldFlash) {
+      flashIntensity = 1.5; // Enhanced flash
     }
+  }
 
-    // Get color based on current cat eye color
-    let colors = getCatEyeColors();
-    let eyeColor = colors.hex;
-    let shadowColor = colors.hex + "ff"; // Add full alpha
+  // Get color based on current cat eye color
+  const colors = getCatEyeColors();
+  const eyeColor = colors.hex;
+  const shadowColor = colors.hex + "ff";
 
-    // Mouse tracking for pupils
-    let mouseDistX = mx - eyeX;
-    let mouseDistY = my - eyeY;
-    let maxPupilMove = 12;
-    let pupilOffsetX = clamp(mouseDistX * 0.04, -maxPupilMove, maxPupilMove);
-    let pupilOffsetY = clamp(mouseDistY * 0.04, -maxPupilMove, maxPupilMove);
+  // Mouse tracking for pupils
+  const mouseDistX = mx - eyeX;
+  const mouseDistY = my - eyeY;
+  const maxPupilMove = 12;
+  const pupilOffsetX = clamp(mouseDistX * 0.04, -maxPupilMove, maxPupilMove);
+  const pupilOffsetY = clamp(mouseDistY * 0.04, -maxPupilMove, maxPupilMove);
 
-    if (!eye.isBlinking) {
-      // Apply flash intensity to the glow
-      x.shadowColor = shadowColor;
-      x.shadowBlur = 50 * flashIntensity;
+  if (!eye.isBlinking) {
+    // Apply flash intensity to the glow
+    x.shadowColor = shadowColor;
+    x.shadowBlur = 50 * flashIntensity;
 
-      // Left eye - tilted oval
-      x.save();
-      x.translate(eyeX - 100, eyeY);
-      x.rotate(0.3);
-      x.fillStyle = eyeColor + F(215 * flashIntensity).toString(16).padStart(2, '0');
-      x.beginPath();
-      x.ellipse(0, 0, 70, 30, 0, 0, TAU);
-      x.fill();
-      x.restore();
-
-      // Right eye - tilted oval
-      x.save();
-      x.translate(eyeX + 100, eyeY);
-      x.rotate(-0.3);
-      x.fillStyle = eyeColor + F(215 * flashIntensity).toString(16).padStart(2, '0');
-      x.beginPath();
-      x.ellipse(0, 0, 70, 30, 0, 0, TAU);
-      x.fill();
-      x.restore();
-
-      x.shadowBlur = 0;
-
-      // Diamond pupils
-      x.fillStyle = "#000";
-
-      // Left pupil
-      x.save();
-      x.translate(eyeX - 100 + pupilOffsetX, eyeY + pupilOffsetY);
-      x.rotate(0.3);
-      x.beginPath();
-      x.moveTo(0, -12);
-      x.lineTo(6, 0);
-      x.lineTo(0, 12);
-      x.lineTo(-6, 0);
-      x.closePath();
-      x.fill();
-      x.restore();
-
-      // Right pupil
-      x.save();
-      x.translate(eyeX + 100 + pupilOffsetX, eyeY + pupilOffsetY);
-      x.rotate(-0.3);
-      x.beginPath();
-      x.moveTo(0, -12);
-      x.lineTo(6, 0);
-      x.lineTo(0, 12);
-      x.lineTo(-6, 0);
-      x.closePath();
-      x.fill();
-      x.restore();
-    }
-
-    // Cat nose and whiskers - OUTSIDE the blinking check so they stay visible
-    // Cat nose - triangle with point at bottom, enhanced with proximity only
-    let noseAlpha = 0.4;
-    let noseGlow = 0;
-    
-    // Make nose glow based on mouse proximity only (not captured fireflies)
-    if (mouseNearCat) {
-      let proximityTwinkle = sin(now * 0.015) * 0.5 + 0.5; // Gentle breathing effect
-      noseAlpha = 0.4 + (catProximity * 0.6) + (proximityTwinkle * catProximity * 0.3); // Enhanced with mouse proximity
-      noseGlow = (catProximity * 25) + (proximityTwinkle * catProximity * 10); // Strong glow when mouse is near
-    }
-    
-    x.strokeStyle = WHITE(noseAlpha);
-    x.lineWidth = 1.5;
-    x.globalAlpha = noseAlpha;
-    
-    // Add glow effect when twinkling
-    if (noseGlow > 0) {
-      x.shadowBlur = noseGlow;
-      x.shadowColor = WHITE(0.8);
-    }
-    
+    // Left eye - tilted oval
+    x.save();
+    x.translate(eyeX - 100, eyeY);
+    x.rotate(0.3);
+    x.fillStyle = eyeColor + F(215 * flashIntensity).toString(16).padStart(2, '0');
     x.beginPath();
-    x.moveTo(eyeX - 8, eyeY + 40); // Top left (larger - was 6, now 8)
-    x.lineTo(eyeX + 8, eyeY + 40); // Top right  
-    x.lineTo(eyeX, eyeY + 52); // Bottom point (larger - was 50, now 52)
-    x.closePath();
-    x.stroke();
-    
-    // Reset shadow
+    x.ellipse(0, 0, 70, 30, 0, 0, TAU);
+    x.fill();
+    x.restore();
+
+    // Right eye - tilted oval
+    x.save();
+    x.translate(eyeX + 100, eyeY);
+    x.rotate(-0.3);
+    x.fillStyle = eyeColor + F(215 * flashIntensity).toString(16).padStart(2, '0');
+    x.beginPath();
+    x.ellipse(0, 0, 70, 30, 0, 0, TAU);
+    x.fill();
+    x.restore();
+
     x.shadowBlur = 0;
 
-    // Cat whiskers - enhanced with mouse proximity effects
-    // Create gentle breathing effect for whiskers + mouse proximity enhancement
-    let whiskerBreathing = sin(now * 0.002) * 0.5 + 0.5; // Slow, breathing-like
-    let proximityEffect = catProximity * 0.6; // Extra glow when mouse is near
-    let whiskerAlpha = 0.3 + (whiskerBreathing * 0.4) + proximityEffect; // Enhanced with proximity
-    let whiskerGlow = (whiskerBreathing * 8) + (catProximity * 15); // Much more glow when near
+    // Diamond pupils
+    x.fillStyle = "#000";
+
+    // Left pupil
+    x.save();
+    x.translate(eyeX - 100 + pupilOffsetX, eyeY + pupilOffsetY);
+    x.rotate(0.3);
+    x.beginPath();
+    x.moveTo(0, -12);
+    x.lineTo(6, 0);
+    x.lineTo(0, 12);
+    x.lineTo(-6, 0);
+    x.closePath();
+    x.fill();
+    x.restore();
+
+    // Right pupil
+    x.save();
+    x.translate(eyeX + 100 + pupilOffsetX, eyeY + pupilOffsetY);
+    x.rotate(-0.3);
+    x.beginPath();
+    x.moveTo(0, -12);
+    x.lineTo(6, 0);
+    x.lineTo(0, 12);
+    x.lineTo(-6, 0);
+    x.closePath();
+    x.fill();
+    x.restore();
+  }
+
+  // Cat nose and whiskers - OUTSIDE the blinking check so they stay visible
+  let noseAlpha = 0.4;
+  let noseGlow = 0;
+  
+  // Make nose glow based on mouse proximity - enhanced twinkling
+  if (mouseNearCat) {
+    const proximityTwinkle = sin(now * 0.008) * 0.5 + 0.5; // Faster twinkling
+    const secondaryTwinkle = sin(now * 0.012 + 1.5) * 0.3 + 0.7; // Secondary layer
+    const combinedTwinkle = proximityTwinkle * secondaryTwinkle;
     
-    // Add twitch effect when mouse is very close
-    let whiskerTwitch = mouseNearCat ? sin(now * 0.02) * catProximity * 3 : 0;
+    noseAlpha = 0.4 + (catProximity * 0.8) + (combinedTwinkle * catProximity * 0.5);
+    noseGlow = (catProximity * 35) + (combinedTwinkle * catProximity * 20);
+  }
+  
+  x.strokeStyle = `rgba(255, 255, 255, ${noseAlpha})`;
+  x.lineWidth = 1.5;
+  x.globalAlpha = noseAlpha;
+  
+  // Add glow effect when twinkling
+  if (noseGlow > 0) {
+    x.shadowBlur = noseGlow;
+    x.shadowColor = `rgba(255, 255, 255, 0.9)`;
+  }
+  
+  x.beginPath();
+  x.moveTo(eyeX - 8, eyeY + 40);
+  x.lineTo(eyeX + 8, eyeY + 40);
+  x.lineTo(eyeX, eyeY + 52);
+  x.closePath();
+  x.stroke();
+  
+  // Reset shadow
+  x.shadowBlur = 0;
+
+  // Cat whiskers - enhanced with mouse proximity effects
+  const whiskerBreathing = sin(now * 0.003) * 0.5 + 0.5; // Slightly faster
+  const proximityEffect = catProximity * 0.8; // More pronounced proximity effect
+  const whiskerAlpha = 0.3 + (whiskerBreathing * 0.5) + proximityEffect;
+  const whiskerGlow = (whiskerBreathing * 12) + (catProximity * 25); // More glow
+  
+  // Enhanced twitch effect when mouse is near - more cat-like movement
+  const baseTwitch = sin(now * 0.015) * 2; // Base gentle movement
+  const proximityTwitch = mouseNearCat ? sin(now * 0.025) * catProximity * 8 : 0; // More pronounced
+  const randomTwitch = mouseNearCat ? sin(now * 0.04 + 2.3) * catProximity * 4 : 0; // Added randomness
+  const whiskerTwitch = baseTwitch + proximityTwitch + randomTwitch;
+  
+  // Batch canvas state for whiskers
+  setStroke(`rgba(255, 255, 255, ${Math.min(1, whiskerAlpha)})`);
+  setLineWidth(1);
+  x.globalAlpha = Math.min(1, whiskerAlpha);
+  
+  // Enhanced glow for whiskers when near cat
+  if (whiskerGlow > 0) {
+    x.shadowBlur = whiskerGlow;
+    x.shadowColor = `rgba(255, 255, 255, 0.5)`;
+  }
+  
+  // Draw left and right whiskers
+  drawWhiskers(-1, eyeX, eyeY, whiskerTwitch, now);
+  drawWhiskers(1, eyeX, eyeY, whiskerTwitch, now);
+
+  // Reset shadow effects and alpha
+  x.shadowBlur = 0;
+  x.globalAlpha = 1;
+};
+
+// Update cat eye color changes and warnings
+const updateCatEyes = (now) => {
+  // During tutorial steps 0-1, keep cat eyes stable for learning
+  if (!tutorialComplete && tutorialStep < 2) {
+    // Still update blinking animation during tutorial
+    catEyes.forEach(eye => {
+      eye.blinkTimer++;
+      if (!eye.isBlinking && eye.blinkTimer > 1200) { // Blink every 20 seconds
+        eye.isBlinking = true;
+        eye.blinkDuration = 10;
+        eye.blinkTimer = 0;
+      } else if (eye.isBlinking) {
+        eye.blinkDuration--;
+        if (eye.blinkDuration <= 0) {
+          eye.isBlinking = false;
+        }
+      }
+    });
+    return; // Skip hunger/color change logic during early tutorial
+  }
+  
+  catEyeChangeTimer++;
+  
+  // Warning system - gives player time to react
+  const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+  const isWarning = timeUntilChange <= CFG.warnFrames;
+  
+  // Play warning sound when warning period starts
+  if (isWarning && !lastWarningState && otherFireflies.some(f => f.captured)) {
+    playTone(1000, 0.1, 0.08);
+  }
+  lastWarningState = isWarning;
+  
+  // Time for color change
+  if (catEyeChangeTimer >= nextColorChangeTime) {
+    handleColorChange(now);
+    setNextColorChangeTime();
+  }
+  
+  // Update blinking animation
+  catEyes.forEach(eye => {
+    eye.blinkTimer++;
+    if (!eye.isBlinking && eye.blinkTimer > 1200) { // Blink every 20 seconds
+      eye.isBlinking = true;
+      eye.blinkDuration = 10;
+      eye.blinkTimer = 0;
+    } else if (eye.isBlinking) {
+      eye.blinkDuration--;
+      if (eye.blinkDuration <= 0) {
+        eye.isBlinking = false;
+      }
+    }
+  });
+};
+
+// Handle color change mechanics and shield protection
+const handleColorChange = (now) => {
+  const capturedFireflies = otherFireflies.filter(f => f.captured);
+  const freeFireflies = otherFireflies.filter(f => !f.captured);
+  
+  // Handle captured fireflies (existing logic)
+  if (capturedFireflies.length > 0) {
+    if (shieldActive) {
+      handleShieldProtection(capturedFireflies, now);
+    } else {
+      // No shield - full penalty
+      handleNoPenalty(capturedFireflies);
+    }
+  }
+  
+  // Handle free fireflies - cat eats them unless perfectly protected
+  if (freeFireflies.length > 0) {
+    const protectedFireflies = freeFireflies.filter(f => f.perfectlyProtected);
+    const eatenFireflies = freeFireflies.filter(f => !f.perfectlyProtected);
     
-    // Batch canvas state for whiskers
-    setStroke(WHITE(Math.min(1, whiskerAlpha)));
-    setLineWidth(1);
-    x.globalAlpha = Math.min(1, whiskerAlpha);
-    
-    // Add gentle glow to whiskers
-    if (whiskerGlow > 0) {
-      setBlur(whiskerGlow, WHITE(0.3));
+    if (eatenFireflies.length > 0) {
+      // Remove eaten fireflies
+      otherFireflies = otherFireflies.filter(f => f.captured || f.perfectlyProtected);
+      totalLost += eatenFireflies.length;
+      
+      // Visual feedback for eaten fireflies - simple and quick
+      if (protectedFireflies.length > 0) {
+        clearShieldFeedback(); // Clear existing feedback to prevent stacking
+        addScoreText(`+${protectedFireflies.length} PERFECT!`, w / 2, h / 2 + 40, "#00ff88", 600); // Increased to 600 frames
+      }
+      addScoreText(`-${eatenFireflies.length}`, w / 2, h / 2 + 70, "#ff8844", 600); // Increased to 600 frames for better visibility
     }
     
-    // Draw left and right whiskers using optimized function
-    drawWhiskers(-1, eyeX, eyeY, whiskerTwitch, now); // Left whiskers
-    drawWhiskers(1, eyeX, eyeY, whiskerTwitch, now);  // Right whiskers
-
-    // Reset shadow effects and alpha
-    setBlur(0, '');
-    x.globalAlpha = 1; // Reset alpha
+    // Clear protection flags
+    otherFireflies.forEach(f => f.perfectlyProtected = false);
   }
-}
-
-// Firefly System
-function spawnFirefly(summoned = false, forceManaFirefly = false) {
-  // For summoned fireflies, spawn from bottom of screen and make them obvious
-  let x, y;
-  if (summoned) {
-    x = r() * w;
-    y = h + 20; // Start below screen
-  } else {
-    x = r() * w;
-    y = h * 0.3 + r() * (h * 0.5);
-  }
-
-  // Determine firefly type
-  let type = "green";
-  let value = 1;
-  let isManaFirefly = false;
   
-  // Special mana firefly spawns when resources are critically low
-  if (forceManaFirefly || (!summoned && manaEnergy < 20 && r() < 0.008)) { // ~0.8% chance when low mana
-    type = "mana";
-    value = 1; // Same capture value, but special mana restoration
-    isManaFirefly = true;
-  }
+  changeToNewColor();
+};
 
-  let newFirefly = {
-    x: x,
-    y: y,
-    type: type,
-    value: value,
+// Shield protection with timing-based effectiveness
+const handleShieldProtection = (capturedFireflies, now) => {
+  const warningPhase = nextColorChangeTime - catEyeChangeTimer;
+  let protectionRate, timingQuality;
+  
+  // Timing-based shield effectiveness with tighter perfect window
+  if (warningPhase >= CFG.flash2 + 5 && warningPhase <= CFG.flash2 + 15) {
+    // Perfect shield: 10-frame window (0.16 seconds) - protects ALL fireflies!
+    protectionRate = 1.0;
+    timingQuality = "PERFECT";
+    
+    // PERFECT SHIELD: Protect ALL fireflies on screen, not just captured ones
+    otherFireflies.forEach(firefly => {
+      if (!firefly.captured) {
+        firefly.perfectlyProtected = true; // Mark for protection
+      }
+    });
+    
+  } else if (warningPhase >= CFG.flash1 && warningPhase <= CFG.flash2) {
+    protectionRate = 0.95; // Great timing - 95% protection (was 85%)
+    timingQuality = "GREAT";
+  } else if (warningPhase >= CFG.flash3 && warningPhase <= CFG.warnFrames) {
+    protectionRate = 0.85; // Good timing - 85% protection (was 70%)
+    timingQuality = "GOOD";
+  } else {
+    protectionRate = 0.7; // Late timing - 70% protection (was 50%)
+    timingQuality = "LATE";
+  }
+  
+  const firefliesLost = F(capturedFireflies.length * (1 - protectionRate));
+  const firefliesProtected = capturedFireflies.length - firefliesLost;
+  
+  // Apply protection results
+  if (firefliesLost > 0) {
+    score -= firefliesLost;
+    releaseCapturedFireflies(firefliesLost);
+  }
+  
+  // Shield consumed after use
+  shieldActive = false;
+  stopShieldHum(); // Stop the hum
+  shieldCooldown = CFG.shieldCooldown + getDifficulty() * 4;
+  
+  // Audio feedback based on timing
+  const soundFreqs = { "PERFECT": 300, "GREAT": 250, "GOOD": 200, "LATE": 180 };
+  playTone(soundFreqs[timingQuality], 0.2, 0.15);
+  
+  // Visual feedback - simple and quick
+  const protectionText = firefliesLost === 0 ? 
+    `${timingQuality} SHIELD!` : 
+    `${timingQuality}: +${firefliesProtected} -${firefliesLost}`;
+  
+  // Clear any existing shield feedback to prevent stacking
+  clearShieldFeedback();
+  addScoreText(protectionText, w / 2, h / 2 - 100, getTimingColor(timingQuality), 600); // Increased to 600 frames (10 seconds) for much better readability
+  
+  // Tutorial progression - advance after successful shield use
+  if (!tutorialComplete && tutorialStep === 2 && firefliesProtected > 0) {
+    tutorialStep = 3; // Move to resource management tutorial
+  }
+};
+
+// No shield protection - partial penalty (was full penalty)
+const handleNoPenalty = (capturedFireflies) => {
+  // Instead of losing ALL fireflies, lose 60% of them
+  const firefliesLost = Math.ceil(capturedFireflies.length * 0.6); // 60% lost instead of 100%
+  const firefliesSaved = capturedFireflies.length - firefliesLost;
+  
+  score -= firefliesLost;
+  totalLost += firefliesLost;
+  
+  // Show what happened - simple format with longer duration for learning
+  clearShieldFeedback(); // Clear existing feedback to prevent stacking
+  addScoreText(`NO SHIELD: +${firefliesSaved} -${firefliesLost}`, w / 2, h / 2 - 60, "#ffaa44", 600); // Increased to 600 frames
+  
+  // Break delivery streak when fireflies are lost
+  if (deliveryStreak > 0) {
+    addScoreText(`Streak broken!`, w / 2, h / 2 + 40, "#ff6666", 600); // Increased to 600 frames for much better visibility
+    deliveryStreak = 0;
+  }
+  
+  // Partial release - only release the lost fireflies
+  releaseCapturedFireflies(firefliesLost);
+  
+  // If we lost some but not all, continue charging with remaining fireflies
+  if (firefliesSaved > 0) {
+    // Keep some fireflies captured
+    const remainingFireflies = otherFireflies.filter(f => f.captured).slice(0, firefliesSaved);
+    charging = remainingFireflies.length > 0;
+  } else {
+    // Lost all fireflies
+    charging = false;
+    glowPower = 0;
+  }
+  
+  // Create dispersal effect only for lost fireflies
+  const dispersalCount = Math.min(firefliesLost, capturedFireflies.length);
+  for (let i = 0; i < dispersalCount; i++) {
+    if (capturedFireflies[i]) {
+      createDispersalEffect(capturedFireflies[i]);
+    }
+  }
+  
+  // Reduce shield cooldown since no shield was used
+  shieldCooldown = Math.max(0, shieldCooldown - 30);
+  
+  playTone(150, 0.3, 0.1);
+};
+
+// Helper functions for cat system
+const changeToNewColor = () => {
+  const colors = ["pink", "purple", "gold"];
+  let newColor;
+  do {
+    newColor = colors[F(r() * colors.length)];
+  } while (newColor === catEyeColor);
+  
+  catEyeColor = newColor;
+  catEyeChangeTimer = 0;
+  lastWarningState = false;
+};
+
+const setNextColorChangeTime = () => {
+  const gameTime = Date.now() - (startTime || Date.now());
+  const gameMinutes = gameTime / 60000;
+  
+  // Progressive difficulty - timing gets faster over time
+  let minTime = 480, maxTime = 900; // 8-15 seconds base
+  
+  if (gameMinutes > 1) {
+    const midGameFactor = Math.min(1, (gameMinutes - 1) / 2);
+    minTime = F(480 - (240 * midGameFactor)); // Down to 4 seconds
+    maxTime = F(900 - (400 * midGameFactor)); // Down to 8.3 seconds
+  }
+  
+  if (gameMinutes > 3) {
+    const lateGameFactor = Math.min(1, (gameMinutes - 3) / 2);
+    minTime = F(180 - (60 * lateGameFactor)); // Down to 2 seconds
+    maxTime = F(420 - (120 * lateGameFactor)); // Down to 5 seconds
+  }
+  
+  nextColorChangeTime = minTime + F(r() * (maxTime - minTime));
+};
+
+const releaseCapturedFireflies = (count) => {
+  let released = 0;
+  otherFireflies.forEach(f => {
+    if (f.captured && released < count) {
+      f.captured = false;
+      released++;
+    }
+  });
+};
+
+const getTimingColor = (quality) => {
+  const colors = { "LATE": "#ff8844", "GOOD": "#ffdd00", "GREAT": "#88ff44", "PERFECT": "#00ff88" };
+  return colors[quality] || "#ffaa00";
+};
+
+// Draw the delivery zone near the cat
+const drawDeliveryZone = (now) => {
+  const centerX = w / 2;
+  const centerY = h * 0.2; // Match the cat nose position
+  const radius = 50; // Delivery zone radius for text positioning
+  const requiredFireflies = getRequiredFireflies();
+  const capturedCount = otherFireflies.filter(f => f.captured).length;
+  const canDeliver = capturedCount >= requiredFireflies;
+
+  // No visible delivery zone ring - zone is invisible but still functional
+  
+  x.save();
+  
+  x.setLineDash([]); // Reset dash pattern
+  x.restore();
+  
+  // No delivery zone UI elements - zone is invisible but functional
+};
+
+// ===== SCORE SYSTEM =====
+
+// Add floating score text
+const addScoreText = (text, x, y, color = "#ffffff", life = 300) => { // Increased default from 120 to 300
+  scoreTexts.push({ text, x, y, life: 0, maxLife: life, color });
+};
+
+// Clear existing shield feedback to prevent stacking
+const clearShieldFeedback = () => {
+  scoreTexts = scoreTexts.filter(text => 
+    !text.text.includes('SHIELD') && 
+    !text.text.includes('PERFECT') && 
+    !text.text.includes('GREAT') && 
+    !text.text.includes('GOOD') && 
+    !text.text.includes('LATE')
+  );
+};
+
+// Update and draw floating score texts
+const drawScoreTexts = () => {
+  scoreTexts.forEach(text => {
+    const progress = text.life / text.maxLife;
+    const alpha = 1 - progress; // Fade out over time
+    
+    // Only apply scaling to short numeric text (like +5, -3, etc.)
+    const isShortNumeric = /^[+\-]\d+$/.test(text.text.trim()) || /^\+\d+\s+PERFECT!$/.test(text.text);
+    
+    let fontSize;
+    if (isShortNumeric) {
+      // Dynamic font size for numbers: starts large (24px) and shrinks to normal (16px)
+      const startSize = 24;
+      const endSize = 16;
+      fontSize = Math.floor(startSize - (startSize - endSize) * progress);
+    } else {
+      // Keep consistent size for text messages
+      fontSize = 16;
+    }
+    
+    setFill(text.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+    x.font = `${fontSize}px monospace`;
+    x.textAlign = "center";
+    x.fillText(text.text, text.x, text.y - text.life * 0.5);
+    
+    text.life++;
+  });
+  
+  // Remove expired texts
+  scoreTexts = scoreTexts.filter(text => text.life < text.maxLife);
+};
+
+// ===== FIREFLIES SYSTEM =====
+
+// Spawn a new firefly at random location
+const spawnFirefly = () => {
+  if (otherFireflies.length >= CFG.maxFireflies) return;
+  
+  otherFireflies.push({
+    x: r() * w,
+    y: h * 0.3 + r() * h * 0.5, // Keep in lower 2/3 of screen
+    captured: false,
+    captureOffset: { x: 0, y: 0 },
     floatTimer: r() * TAU,
     flashTimer: r() * TAU,
-    glowPhase: r() * TAU,
-    captured: false,
-    fadeIn: summoned ? 0 : 1,
-    captureOffset: { x: 0, y: 0 },
-    summoned: summoned, // Track if this was summoned
-    summonSpeed: summoned ? 2 + r() * 2 : 0, // Initial upward speed for summoned fireflies
-    summonGlow: summoned ? 120 : 0, // Extra glow for summoned fireflies
-    // New roaming properties
-    roamTarget: null, // Will be set on first update
-    roamSpeed: isManaFirefly ? 0.2 + r() * 0.2 : 0.3 + r() * 0.4, // Slower, more deliberate movement for mana fireflies
-    flashCycle: r() * TAU,
-    nextFlashTime: r() * 180 + 60, // Random initial flash time
-    // Special mana firefly properties
-    isManaFirefly: isManaFirefly,
-    manaHeartbeat: 0, // For special pulsing effect
-    trailParticles: isManaFirefly ? [] : null, // Golden particle trail for mana fireflies
-  };
-
-  // Prevent firefly population from growing too large (causes lag)
-  let maxFireflies = 25; // Reduced limit for better performance
-  if (otherFireflies.length < maxFireflies) {
-    otherFireflies.push(newFirefly);
-  }
-}
-
-// Simple, responsive clicking effects
-function createClickSparkles(mouseX, mouseY) {
-  // Create 8-10 sparkles at click point for better visibility
-  let count = 8 + F(r() * 3);
-  for (let i = 0; i < count; i++) {
-    clickSparkles.push({
-      x: mouseX + (r() - 0.5) * 30,
-      y: mouseY + (r() - 0.5) * 30,
-      vx: (r() - 0.5) * 6,
-      vy: (r() - 0.5) * 6 - 2, // More upward bias
-      size: 2 + r() * 3, // Bigger sparkles
-      life: 30 + r() * 20,
-      maxLife: 50,
-      w: r() > 0.3 ? 1 : 0 // 1=white, 0=yellow
-    });
-  }
-}
-
-function updateClickEffects() {
-  // Update sparkles
-  clickSparkles = clickSparkles.filter(sparkle => {
-    sparkle.x += sparkle.vx;
-    sparkle.y += sparkle.vy;
-    sparkle.vy += 0.1; // Gravity
-    sparkle.vx *= 0.98; // Air resistance
-    sparkle.life--;
-    return sparkle.life > 0;
+    roamTarget: null,
+    fadeIn: 0, // For smooth spawning
+    glowIntensity: 0.5 + r() * 0.5,
+    size: 2 + r() * 2,
   });
-  
-  // Update mana energy and cooldown
-  if (shieldCooldown > 0) {
-    shieldCooldown--;
-  }
-  // Removed automatic energy recovery - only refills when delivering fireflies
-  
-  if (shieldActive) {
-    manaEnergy -= 1; // Slower drain while active for longer shield duration
-    if (manaEnergy <= 0) {
-      shieldActive = false;
-      shieldCooldown = 180; // 3 second cooldown after depletion
-    }
-  }
-}
+};
 
-function drawClickEffects() {
-  // Draw simple sparkles
-  clickSparkles.forEach(sparkle => {
-    let alpha = sparkle.life / sparkle.maxLife;
-    let colors = SPK[sparkle.w];
-    setFill(`rgba(${colors[0]},${alpha})`);
-    
-    setBlur(8 * alpha, colors[1]);
-    x.beginPath();
-    x.arc(sparkle.x, sparkle.y, sparkle.size * alpha, 0, TAU);
-    x.fill();
-  });
+// Update firefly behavior and movement
+const updateFireflies = (playerX, playerY) => {
+  const speedMultiplier = getSpeedMultiplier();
   
-  setBlur(0, ''); // Reset blur after sparkles
-  
-  // Help icon in top-right corner (moved since we removed mana bar)
-  if (gameStarted && !gameOver) {
-    setFill(WHITE(0.5));
-    x.font = "14px serif";
-    x.fillText("?", w - 30, 25);
-    x.font = "10px monospace";
-    x.fillText("R", w - 30, 35);
-  }
-}
-
-function updateFireflies(fx, fy) {
-  otherFireflies.forEach((f) => {
-    // Special particle trail for mana fireflies
-    if (f.isManaFirefly && r() < 0.3) { // 30% chance each frame
-      particles.push({
-        x: f.x + (r() - 0.5) * 6,
-        y: f.y + (r() - 0.5) * 6,
-        vx: (r() - 0.5) * 0.5,
-        vy: (r() - 0.5) * 0.5,
-        size: 1 + r(),
-        life: 0,
-        maxLife: 25 + r() * 15,
-        color: "#ffb400", // Golden particles
-        alpha: 0.6,
-        glow: true,
-      });
-    }
-    
-    // Handle summoned firefly effects
-    if (f.summoned) {
-      // Fly upward with direct position movement
-      f.y -= f.summonSpeed;
-      f.summonSpeed *= 0.98; // Gradually slow down
-      
-      // Fade in effect
-      if (f.fadeIn < 1) {
-        f.fadeIn += 0.05;
-      }
-      
-      // Reduce summon glow over time
-      if (f.summonGlow > 0) {
-        f.summonGlow -= 2;
-      }
-      
-      // Stop being "summoned" once fully faded in and settled
-      if (f.fadeIn >= 1 && f.summonGlow <= 0) {
-        f.summoned = false;
-      }
-    }
-    
-    if (f.captured) {
-      // Captured fireflies drift towards player with floating motion
-      if (charging) {
-        let targetX = fx + f.captureOffset.x;
-        let targetY = fy + f.captureOffset.y;
-
-        // Gentle drift towards target position with floating
-        f.floatTimer += 0.15;
-        let floatX = sin(f.floatTimer) * 8;
-        let floatY = cos(f.floatTimer * 1.4) * 6;
-
-        f.x += (targetX + floatX - f.x) * 0.1;
-        f.y += (targetY + floatY - f.y) * 0.1;
-      } else {
-        // Space released - disperse to random gameplay areas
-        f.captured = false;
-        
-        // Choose random target position within gameplay area
-        let targetX = r() * w;
-        let targetY = h * 0.3 + r() * (h * 0.5); // Stay in main gameplay zone
-        
-        // Calculate direction and distance to target
-        let dx = targetX - f.x;
-        let dy = targetY - f.y;
-        let distance = hyp(dx, dy);
-        
-        // Apply direct position movement for dispersal
-        let speed = 3 + r() * 2; // Moderate dispersal speed
-        let moveX = (dx / distance) * speed;
-        let moveY = (dy / distance) * speed;
-        
-        f.x += moveX;
-        f.y += moveY;
-        
-        T(350, 0.15, 0.06); // Firefly pickup sound
-      }
+  otherFireflies.forEach(firefly => {
+    if (firefly.captured) {
+      // Captured fireflies orbit around player
+      updateCapturedFirefly(firefly, playerX, playerY);
     } else {
-      // Handle fade-in for summoned fireflies
-      if (f.fadeIn < 1) {
-        f.fadeIn += 0.03;
-        f.fadeIn = Math.min(1, f.fadeIn);
-      }
-
-      // Normal floating behavior - more naturalistic roaming
-      let speedMultiplier = getSpeedMultiplier(); // Gets faster as score increases
-      
-      // Add slow roaming movement - fireflies actually travel to different areas
-      if (!f.roamTarget || Math.abs(f.x - f.roamTarget.x) < 30 && Math.abs(f.y - f.roamTarget.y) < 30) {
-        // Set new roaming target
-        f.roamTarget = {
-          x: r() * w,
-          y: h * 0.35 + r() * (h * 0.45) // Stay in grass area
-        };
-        f.roamSpeed = 0.3 + r() * 0.4; // Vary roaming speed
-      }
-      
-      // Gentle movement toward roam target (but cap the distance moved per frame)
-      let dx = f.roamTarget.x - f.x;
-      let dy = f.roamTarget.y - f.y;
-      let distSq = dx*dx + dy*dy;
-      if (distSq > 25) { // 5*5 = 25
-        let dist = hyp(dx, dy); // Only compute distance when needed for normalization
-        let maxMove = f.roamSpeed * speedMultiplier;
-        f.x += Math.max(-maxMove, Math.min(maxMove, (dx / dist) * maxMove));
-        f.y += Math.max(-maxMove, Math.min(maxMove, (dy / dist) * maxMove));
-      }
-      
-      // Add gentle floating wobble on top of roaming (but smaller)
-      f.floatTimer += (0.04 + r() * 0.02) * speedMultiplier; // Slower, less erratic
-      f.x += sin(f.floatTimer) * (0.2 * speedMultiplier); // Much smaller wobble
-      f.y += cos(f.floatTimer * 1.3) * (0.15 * speedMultiplier); // Much smaller wobble
-      
-      // Only apply gentle downward nudge if firefly is above the grass line (too high)
-      if (f.y < h * 0.35) { // If above grass area
-        f.y += 0.2; // Gentle push down toward grass area
-      }
-      
-      // More realistic firefly flashing - but faster for game aesthetics
-      f.flashTimer += 0.04 + r() * 0.02; // Medium progression for base glow
-      
-      // Flash cycle for occasional bright flashes
-      f.flashCycle = (f.flashCycle || 0) + (0.02 + r() * 0.01);
-      if (f.flashCycle > TAU) {
-        f.flashCycle = 0;
-        // Trigger occasional flash randomly
-        if (r() < 0.3) { // 30% chance to start a flash cycle
-          f.nextFlashTime = r() * 60 + 30; // Start flash soon
-        }
-      }
-      
-      f.glowPhase += 0.06; // Slightly faster glow progression
-
-      // Keep fireflies within screen bounds with gentle wrapping
-      if (f.x < -10) f.x = w + 10; // Wrap left to right
-      if (f.x > w + 10) f.x = -10; // Wrap right to left
-      if (f.y < h * 0.25) f.y = h * 0.3; // Don't go too high (keep below sky area)
-      if (f.y > h - 20) f.y = h * 0.7; // Don't go too low (keep above bottom edge)
-
-      if (charging || glowPower > 20) {
-        let dx = fx - f.x,
-          dy = fy - f.y;
-        let distSq = dx*dx + dy*dy;
-
-        if (distSq < 200*200) {
-          // Use direct position movement instead of velocity for attraction
-          let dist = hyp(dx, dy); // Only compute distance when needed for normalization
-          let force = ((charging ? 0.8 : 0.3) * (200 - dist)) / 200;
-          let maxAttraction = 2; // Cap the attraction movement per frame
-          let moveX = Math.max(-maxAttraction, Math.min(maxAttraction, (dx / dist) * force));
-          let moveY = Math.max(-maxAttraction, Math.min(maxAttraction, (dy / dist) * force));
-          f.x += moveX;
-          f.y += moveY;
-        }
-
-        // Capture firefly when close and charging
-        if (charging && distSq < 25*25) {
-          f.captured = true;
-          f.captureOffset.x = f.x - fx + (r() - 0.5) * 20;
-          f.captureOffset.y = f.y - fy + (r() - 0.5) * 20;
-          T(800, .2, .1); // Pickup sound
-
-          // Capture particles
-          for (let i = 0; i < 5; i++) {
-            let a = r() * TAU;
-            particles.push({
-              x: f.x,
-              y: f.y,
-              vx: cos(a) * 1,
-              vy: sin(a) * 1,
-              t: 0,
-              isBurst: true,
-            });
-          }
-        }
-      }
-    }
-  });
-
-  // Check for delivery to cat (between the eyes)
-  checkDeliveryZone(fx, fy);
-}
-
-function updateOrbitingFireflies() {
-  orbitingFireflies = orbitingFireflies.filter(f => {
-    f.life++;
-    
-    // Spiral inward while orbiting
-    f.angle += f.orbitSpeed;
-    f.radius -= f.spiralSpeed;
-    
-    // Update position based on orbital motion
-    f.x = f.centerX + cos(f.angle) * f.radius;
-    f.y = f.centerY + sin(f.angle) * f.radius;
-    
-    // Fade out as it approaches center
-    f.alpha = 1 - (f.life / f.maxLife);
-    
-    // When it reaches the center or times out, create burst effect
-    if (f.radius <= 5 || f.life >= f.maxLife) {
-      // Create sparkle burst at absorption point
-      for (let i = 0; i < 6; i++) {
-        particles.push({
-          x: f.x,
-          y: f.y,
-          vx: (r() - 0.5) * 4,
-          vy: (r() - 0.5) * 4,
-          size: 1 + r() * 2,
-          life: 0,
-          maxLife: 30 + r() * 20,
-          color: catEyeColor,
-          alpha: 0.8,
-          glow: true,
-        });
-      }
-      return false; // Remove this orbiting firefly
+      // Free fireflies roam and react to player
+      updateFreeFirefly(firefly, playerX, playerY, speedMultiplier);
     }
     
-    return true; // Keep this orbiting firefly
+    // Update visual effects
+    firefly.floatTimer += 0.03 + r() * 0.02;
+    firefly.flashTimer += 0.04 + r() * 0.02;
   });
-}
+};
 
-// Optimized ring drawing helper
-// cx,cy: center, r: radius, stroke: stroke color, alpha: opacity, lineWidth: width, dashed: dash pattern or null
-function drawRing(cx, cy, r, stroke, alpha, lineWidth, dashed) {
-  setStroke(stroke.replace('ALPHA', alpha)); // Replace placeholder with actual alpha
-  setLineWidth(lineWidth);
-  if (dashed) x.setLineDash(dashed);
-  x.beginPath();
-  x.arc(cx, cy, r, 0, TAU);
-  x.stroke();
-  if (dashed) x.setLineDash([]); // Reset dash only if it was set
-}
+// Update behavior for captured fireflies
+const updateCapturedFirefly = (firefly, playerX, playerY) => {
+  // Smooth orbit around player with offset
+  const targetX = playerX + firefly.captureOffset.x;
+  const targetY = playerY + firefly.captureOffset.y;
+  
+  // Gentle movement toward target position
+  firefly.x += (targetX - firefly.x) * 0.15;
+  firefly.y += (targetY - firefly.y) * 0.15;
+  
+  // Add floating motion
+  firefly.x += sin(firefly.floatTimer) * 0.3;
+  firefly.y += cos(firefly.floatTimer * 1.3) * 0.2;
+};
 
-function drawDeliveryZone(now) {
-  if (!gameStarted || gameOver) return;
-  
-  let noseX = w / 2;
-  let noseY = h * 0.2;
-  let noseRadius = 50; // Match the smaller delivery zone
-  let capturedFireflies = otherFireflies.filter(f => f.captured);
-  let requiredFireflies = Math.max(1, F(score / 100) + 1);
-  
-  // Tutorial: Show prominent delivery zone for first-time players
-  if (!tutorialComplete && capturedFireflies.length > 0 && !firstDeliveryMade) {
-    let pulse = 0.6 + 0.4 * sin(now * 0.008); // Strong pulse
-    
-    // Large, prominent outer circle
-    drawRing(noseX, noseY, noseRadius + 20, LIGHT_GREEN('ALPHA'), pulse, 4, null);
-    
-    // Inner glow effect
-    drawRing(noseX, noseY, noseRadius + 15, LIGHT_GREEN('ALPHA'), pulse * 0.3, 8, null);
-    
-    // Tutorial text with elegant font
-    x.textAlign = 'center';
-    x.font = '22px Georgia, serif';
-    setFill(WHITE(pulse));
-    x.fillText('Deliver fireflies here!', noseX, noseY + noseRadius + 60);
-    
-    // Additional helpful text
-    x.font = '16px Georgia, serif';
-    setFill(LIGHT_GRAY(pulse * 0.8));
-    x.fillText('Move close to the cat\'s nose', noseX, noseY + noseRadius + 85);
-    return; // Don't show normal indicators during tutorial
+// Update behavior for free fireflies
+const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
+  // Handle fade-in for newly spawned fireflies
+  if (firefly.fadeIn < 1) {
+    firefly.fadeIn += 0.03;
+    return;
   }
   
-  // Normal gameplay: Minimal UI
-  if (capturedFireflies.length > 0) {
-    let canDeliver = capturedFireflies.length >= requiredFireflies;
-    let alpha = 0.15 + sin(now * 0.005) * 0.05; // Very subtle pulse
-    
-    // Minimal zone circle with appropriate color
-    let color = canDeliver ? GREEN('ALPHA') : YELLOW('ALPHA');
-    drawRing(noseX, noseY, noseRadius, color, alpha, 1, [3, 3]);
-    
-    // Subtle requirement text
-    if (capturedFireflies.length < requiredFireflies) {
-      x.textAlign = 'center';
-      x.font = '16px Georgia, serif';
-      setFill(WHITE(alpha * 3));
-      x.fillText(`${capturedFireflies.length}/${requiredFireflies}`, noseX, noseY + noseRadius + 20);
+  // Check for player capture when charging - but not when overheated
+  if (charging && !summonOverheated) {
+    const distSq = d2(firefly.x, firefly.y, playerX, playerY);
+    if (distSq < 25 * 25) { // 25 pixel capture radius
+      captureFirefly(firefly, playerX, playerY);
+      return;
     }
   }
-}
-
-function checkDeliveryZone(fx, fy) {
-  // Define delivery zone at cat's nose - more precise and rewarding
-  let noseX = w / 2; // Center between eyes
-  let noseY = h * 0.2; // Cat nose area (above skyline)
-  let noseRadius = 50; // Smaller, focused on mouth area for orbital effect
   
-  let capturedFireflies = otherFireflies.filter(f => f.captured);
-  let dx = fx - noseX;
-  let dy = fy - noseY;
-  let distSq = dx*dx + dy*dy;
-  
-  // Check if player is in nose delivery zone with captured fireflies
-  let requiredFireflies = getRequiredFireflies(); // Need more fireflies as score increases
-  if (distSq < noseRadius*noseRadius && capturedFireflies.length >= requiredFireflies) {
-    // Successful delivery - award points based on progressive difficulty
-    let bonusMultiplier = Math.max(1, getDifficulty() + 1); // Bonus points for higher difficulty
-    let pointsAwarded = capturedFireflies.length * bonusMultiplier;
-    score += pointsAwarded;
-    totalCollected += capturedFireflies.length; // Track total collected
-    
-    // Tutorial tracking
-    if (!firstDeliveryMade) {
-      firstDeliveryMade = true;
-      if (!tutorialComplete) {
-        tutorialStep++;
-      }
+  // Repulsion from overheated player - fireflies avoid the exhausted player
+  if (summonOverheated) {
+    const distToPlayer = hyp(firefly.x - playerX, firefly.y - playerY);
+    if (distToPlayer < 80) { // Repulsion zone around overheated player
+      const repelAngle = Math.atan2(firefly.y - playerY, firefly.x - playerX);
+      const repelForce = (80 - distToPlayer) / 80 * 2; // Stronger when closer
+      firefly.x += Math.cos(repelAngle) * repelForce;
+      firefly.y += Math.sin(repelAngle) * repelForce;
     }
-    
-    // Complete tutorial after a few deliveries
-    if (!tutorialComplete && score >= 50) {
-      tutorialComplete = true;
-      localStorage.setItem('tutorialComplete', 'true');
-      addScoreText('Tutorial Complete!', w/2, h/2, '#00ff00', 180);
-    }
-    
-    // Reset heat when delivering fireflies (reward for proper gameplay)
-    summonHeat = Math.max(0, summonHeat - (capturedFireflies.length * 15)); // Cool down significantly
-    if (summonOverheated && summonHeat <= 40) {
-      summonOverheated = false; // End overheat early if cooled down enough
-      overheatCooldown = 0;
-      overheatStunned = false;
-    }
-    
-    // Refill mana energy when delivering fireflies (sacrifice them for mana)
-    let manaFireflies = capturedFireflies.filter(f => f.isManaFirefly);
-    let normalFireflies = capturedFireflies.filter(f => !f.isManaFirefly);
-    
-    // Normal fireflies give +10 mana each
-    addMana(normalFireflies.length * 10);
-    
-    // Special mana fireflies restore full mana!
-    if (manaFireflies.length > 0) {
-      manaEnergy = 100; // Full restore
-      // Create special visual effect for mana restoration
-      for (let i = 0; i < 15; i++) {
-        particles.push({
-          x: fx + (r() - 0.5) * 40,
-          y: fy + (r() - 0.5) * 40,
-          vx: (r() - 0.5) * 4,
-          vy: (r() - 0.5) * 4 - 1, // Slight upward bias
-          size: 2 + r() * 2,
-          life: 0,
-          maxLife: 40 + r() * 20,
-          color: "#ffb400", // Golden color
-          alpha: 0.8,
-          glow: true,
-        });
-      }
-      
-      // Special score text for mana restoration
-      addScoreText("MANA RESTORED!", fx, fy - 50, "gold", 120);
-    }
-    
-    // Show success text at player position
-    addScoreText(`+${pointsAwarded}`, fx, fy - 30, "#00ff00", 90);
-    
-    // Create flutter-away effect and start orbital absorption
-    capturedFireflies.forEach((f, i) => {
-      // Create orbiting firefly for mystical absorption effect
-      orbitingFireflies.push({
-        x: f.x,
-        y: f.y,
-        centerX: noseX,
-        centerY: noseY,
-        angle: Math.atan2(f.y - noseY, f.x - noseX), // Current angle from center
-        radius: hyp(f.x - noseX, f.y - noseY), // Current distance
-        orbitSpeed: 0.15 + r() * 0.1, // How fast it orbits
-        spiralSpeed: 0.8 + r() * 0.4, // How fast it spirals inward
-        life: 0,
-        maxLife: 180, // 3 seconds to spiral in
-        color: getCapturedFireflyColor(),
-        size: 3 + r() * 2,
-        glow: 0.8 + r() * 0.4
-      });
-      
-      // Create fewer flutter particles since we have the orbital effect
-      for (let j = 0; j < 4; j++) { // Reduced from 8
-        particles.push({
-          x: f.x + (r() - 0.5) * 20,
-          y: f.y + (r() - 0.5) * 10,
-          vx: (r() - 0.5) * 2,
-          vy: -0.5 - r() * 1, // Float upward toward cat
-          size: 1 + r() * 2,
-          life: 0,
-          maxLife: 40 + r() * 20,
-          color: catEyeColor, // Transform to cat's current color
-          alpha: 0.6,
-          glow: true,
-          flutterTimer: r() * TAU,
-        });
-      }
-    });
-    
-    // Remove delivered fireflies
-    otherFireflies = otherFireflies.filter(f => !f.captured);
-    
-    // Spawn new fireflies to replace delivered ones
-    for (let i = 0; i < capturedFireflies.length; i++) {
-      spawnFirefly();
-    }
-    
-    T(200, .5, .15); // Delivery purr
   }
-}
-
-function drawFireflies(now) {
-  otherFireflies.forEach((f) => {
-    // Handle fade in for summoned fireflies
-    let alpha = f.fadeIn || 1;
-    if (alpha <= 0) return;
-
-    x.globalAlpha = alpha;
-    
-    // Update mana firefly heartbeat
-    if (f.isManaFirefly) {
-      f.manaHeartbeat += 0.15;
-    }
-    
-    // Draw body using helper
-    drawBody(f);
-    
-    // Draw glow using helper  
-    drawGlow(f, now);
-
-    x.globalAlpha = 1; // Reset alpha
-  });
   
-  // Draw orbiting fireflies (being absorbed by cat)
-  orbitingFireflies.forEach((f) => {
-    x.globalAlpha = f.alpha || 1;
+  // Natural roaming behavior
+  if (!firefly.roamTarget || 
+      Math.abs(firefly.x - firefly.roamTarget.x) < 30 && 
+      Math.abs(firefly.y - firefly.roamTarget.y) < 30) {
     
-    // Draw firefly body
-    x.fillStyle = "#333";
-    x.beginPath();
-    x.arc(f.x, f.y, f.size, 0, TAU);
-    x.fill();
-    
-    // Draw glow
-    if (f.glow > 0.3) {
-      let size = f.size + f.glow * 3;
-      let blur = 8 + f.glow * 12;
-      setBlur(blur, f.color);
-      x.fillStyle = f.color;
-      x.beginPath();
-      x.arc(f.x, f.y, size, 0, TAU);
-      x.fill();
-    }
-    
-    x.globalAlpha = 1;
-  });
+    // Set new roaming destination
+    firefly.roamTarget = {
+      x: r() * w,
+      y: h * 0.35 + r() * h * 0.5, // Stay in grass area
+    };
+  }
   
-  setBlur(0, ''); // Reset blur after firefly rendering
-} // End of firefly rendering
-function updateParticles(fx, fy) {
-  if (r() < 0.08) {
+  // Move toward roam target
+  const dx = firefly.roamTarget.x - firefly.x;
+  const dy = firefly.roamTarget.y - firefly.y;
+  const distance = hyp(dx, dy);
+  
+  if (distance > 5) {
+    const speed = (0.3 + r() * 0.2) * speedMultiplier;
+    firefly.x += (dx / distance) * speed;
+    firefly.y += (dy / distance) * speed;
+  }
+  
+  // Add gentle floating wobble
+  firefly.x += sin(firefly.floatTimer) * 0.2 * speedMultiplier;
+  firefly.y += cos(firefly.floatTimer * 1.3) * 0.15 * speedMultiplier;
+  
+  // Keep fireflies in bounds
+  firefly.x = clamp(firefly.x, 20, w - 20);
+  firefly.y = clamp(firefly.y, h * 0.3, h - 20);
+};
+
+// Capture a firefly
+const captureFirefly = (firefly, playerX, playerY) => {
+  firefly.captured = true;
+  firefly.captureOffset.x = firefly.x - playerX + (r() - 0.5) * 20;
+  firefly.captureOffset.y = firefly.y - playerY + (r() - 0.5) * 20;
+  
+  playTone(800, 0.2, 0.1); // Capture sound
+  
+  // Create capture particles
+  for (let i = 0; i < 5; i++) {
+    const angle = r() * TAU;
     particles.push({
-      x: fx + (r() - 0.5) * 8,
-      y: fy + (r() - 0.5) * 8,
-      t: 0,
-      isBurst: false,
-    });
-  }
-
-  if (charging && r() < 0.4) {
-    let a = r() * TAU;
-    let s = 0.3 + r() * 0.7;
-    particles.push({
-      x: fx + (r() - 0.5) * 2,
-      y: fy + (r() - 0.5) * 2,
-      vx: cos(a) * s,
-      vy: sin(a) * s,
-      t: 0,
+      x: firefly.x,
+      y: firefly.y,
+      vx: cos(angle) * 2,
+      vy: sin(angle) * 2,
+      life: 0,
+      maxLife: 30,
+      size: 1 + r(),
+      color: "#00aaff",
       isBurst: true,
     });
   }
+};
 
-  particles = particles.filter((p) => {
-    p.t += 0.04;
-    if (p.isBurst) {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vx *= 0.995;
-      p.vy *= 0.995;
-    }
-    return p.t < 3.5;
-  });
-}
-
-function drawParticles() {
-  particles.forEach((p) => {
-    let alpha = sin(p.t * 3) * 0.4 + 0.3;
-    if (alpha > 0) {
-      x.fillStyle = `rgba(150,255,150,${alpha})`;
-      x.beginPath();
-      x.arc(p.x, p.y, 0.8, 0, TAU);
-      x.fill();
-    }
-  });
-}
-
-function drawPlayerFirefly(fx, fy, now) {
-  // Player firefly: vibrant cyan-blue when moving, brighter gray-white when idle
-  let isMoving = mouseMoving || charging;
-  let firefly_color = isMoving ? "#00aaff" : "#aaaacc"; // Vibrant cyan-blue when moving, brighter gray-white when idle
-  let shadowColor = isMoving ? "#00aaff" : "#8888aa";
-  
-  // Sputtering effect when overheated
-  if (summonOverheated) {
-    let sputter = sin(now * 0.05) * 0.5 + 0.5; // Fast flicker
-    firefly_color = sputter > 0.3 ? "#ff4444" : "#441111"; // Red sputtering
-    shadowColor = "#ff4444";
+// Draw all fireflies with their glowing effects
+const drawFireflies = (now) => {
+  otherFireflies.forEach(firefly => {
+    const alpha = firefly.fadeIn;
+    if (alpha <= 0) return;
     
-    // Add erratic movement during stun
-    if (overheatStunned) {
-      fx += (r() - 0.5) * 4;
-      fy += (r() - 0.5) * 4;
-    }
-  }
-  
-  // Draw the base firefly
-  setFill(firefly_color);
-  x.beginPath();
-  x.arc(fx, fy, 3, 0, TAU);
-  x.fill();
-
-  let totalGlow = Math.max(glowPower, quickFlashPower);
-  let baseGlow = 20;
-  let enhancedGlow = charging ? 40 : 0;
-  let shieldGlow = shieldActive ? 50 : 0; // Dramatic glow when shield is active
-  
-  totalGlow = Math.max(totalGlow, baseGlow + enhancedGlow + shieldGlow);
-
-  // Draw circular shield/mana indicator around player firefly (Dead Space style)
-  let capturedCount = otherFireflies.filter(f => f.captured).length;
-  let baseRadius = 18 + Math.min(capturedCount * 2, 12); // Grows with captured fireflies
-  let ringWidth = 3;
-  
-  // Always show the circular indicator (unless completely overheated)
-  if (!summonOverheated || overheatCooldown < 120) {
-    // Background ring (gray)
-    x.strokeStyle = "rgba(100, 100, 100, 0.3)";
-    x.lineWidth = ringWidth;
+    // Firefly color based on state - fireflies keep their normal colors even when player is overheated
+    let baseColor, flashIntensity;
+    
+    // Fireflies always maintain their normal colors
+    baseColor = firefly.captured ? "#00aaff" : "#ffff88";
+    const isFlashing = sin(firefly.flashTimer) > 0.6;
+    flashIntensity = isFlashing ? 1.5 : 0.8;
+    
+    // Glow effect - much dimmer when overheated
+    const glowRadius = firefly.size * 3 * flashIntensity;
+    const gradient = x.createRadialGradient(
+      firefly.x, firefly.y, 0,
+      firefly.x, firefly.y, glowRadius
+    );
+    gradient.addColorStop(0, baseColor + Math.floor(alpha * 255 * 0.8).toString(16).padStart(2, '0'));
+    gradient.addColorStop(0.7, baseColor + Math.floor(alpha * 255 * 0.3).toString(16).padStart(2, '0'));
+    gradient.addColorStop(1, "transparent");
+    
+    // Draw glow
+    setFill(gradient);
     x.beginPath();
-    x.arc(fx, fy, baseRadius, 0, TAU);
-    x.stroke();
-    
-    if (!summonOverheated) {
-      // Mana level ring (blue/teal)
-      let manaProgress = manaEnergy / 100;
-      let manaAngle = manaProgress * TAU;
-      
-      let canUseShield = manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated;
-      let pulseIntensity = canUseShield ? 0.7 + sin(now * 0.01) * 0.3 : 0.6;
-      
-      x.strokeStyle = `rgba(100, 180, 180, ${pulseIntensity})`;
-      x.lineWidth = ringWidth;
-      x.beginPath();
-      x.arc(fx, fy, baseRadius, -Math.PI/2, -Math.PI/2 + manaAngle);
-      x.stroke();
-      
-      // Heat overlay (yellow/orange/red)
-      if (summonHeat > 0) {
-        let heatProgress = summonHeat / 100;
-        let heatAngle = heatProgress * TAU;
-        
-        let heatColor = heatProgress > 0.8 ? "255, 100, 100" : 
-                       heatProgress > 0.5 ? "255, 180, 100" : "255, 255, 100";
-        let heatAlpha = 0.4 + heatProgress * 0.4;
-        
-        x.strokeStyle = `rgba(${heatColor}, ${heatAlpha})`;
-        x.lineWidth = ringWidth + 1;
-        x.beginPath();
-        x.arc(fx, fy, baseRadius + 1, -Math.PI/2, -Math.PI/2 + heatAngle);
-        x.stroke();
-      }
-      
-      // Active shield effect
-      if (shieldActive) {
-        let shieldTime = now - lastShieldTime;
-        let shieldPulse = 0.8 + sin(shieldTime * 0.02) * 0.2;
-        
-        x.strokeStyle = BLUE(shieldPulse);
-        x.lineWidth = ringWidth + 2;
-        setBlur(8, BLUE(0.6));
-        x.beginPath();
-        x.arc(fx, fy, baseRadius + 2, 0, TAU);
-        x.stroke();
-        
-        // Rotating energy particles
-        for (let i = 0; i < 4; i++) {
-          let angle = (shieldTime * 0.005 + i * TAU / 4);
-          let particleX = fx + cos(angle) * (baseRadius + 4);
-          let particleY = fy + sin(angle) * (baseRadius + 4);
-          
-          x.fillStyle = BLUE(shieldPulse);
-          x.beginPath();
-          x.arc(particleX, particleY, 1.5, 0, TAU);
-          x.fill();
-        }
-        
-        setBlur(0, ''); // Reset blur after shield effects
-      }
-      
-      // Mana insufficient flash - red ring flash when trying to use abilities without mana
-      if (manaFlashTimer > 0) {
-        let flashIntensity = manaFlashTimer / 30; // Fade from 1 to 0
-        let flashAlpha = flashIntensity * 0.7; // More visible on the ring than screen flash
-        
-        x.strokeStyle = `rgba(255, 80, 80, ${flashAlpha})`;
-        x.lineWidth = ringWidth + 1;
-        setBlur(4, `rgba(255, 80, 80, ${flashAlpha * 0.5})`);
-        x.beginPath();
-        x.arc(fx, fy, baseRadius + 1, 0, TAU);
-        x.stroke();
-      }
-    } else {
-      // Overheated: show red sputter effect
-      let sputterIntensity = sin(now * 0.05) * 0.5 + 0.5;
-      if (sputterIntensity > 0.7) {
-        x.strokeStyle = `rgba(255, 80, 80, ${sputterIntensity * 0.6})`;
-        x.lineWidth = ringWidth;
-        x.beginPath();
-        x.arc(fx, fy, baseRadius, 0, TAU * sputterIntensity);
-        x.stroke();
-      }
-    }
-  }
-
-  if (totalGlow > 0) {
-    let i = Math.min(totalGlow / 100, 1);
-    let size = 3 + i * 5;
-    let blur = 15 + i * 30;
-    
-    // Player glow: vibrant cyan-blue when moving, muted gray-white when idle
-    let isMoving = mouseMoving || charging;
-    let glowIntensity = i; // Use the calculated glow intensity
-    let color;
-    
-    if (isMoving) {
-      // Vibrant cyan-blue glow when moving
-      let glowR = F(0 * glowIntensity);      // No red for pure cyan
-      let glowG = F(170 * glowIntensity);    // Strong green component
-      let glowB = F(255 * glowIntensity);    // Full blue component
-      color = `rgb(${glowR},${glowG},${glowB})`;
-    } else {
-      // Brighter gray-white glow when idle  
-      let glowR = F(170 * glowIntensity);
-      let glowG = F(170 * glowIntensity); 
-      let glowB = F(204 * glowIntensity);
-      color = `rgb(${glowR},${glowG},${glowB})`;
-    }
-
-    setBlur(blur, shadowColor);
-    x.fillStyle = color;
-    x.beginPath();
-    x.arc(fx, fy, size, 0, TAU);
+    x.arc(firefly.x, firefly.y, glowRadius, 0, TAU);
     x.fill();
-    x.globalAlpha = 1; // Reset alpha
-  }
-}
-
-// Input Handling
-c.onmousemove = (e) => {
-  lastMx = mx;
-  lastMy = my;
-  mx = e.clientX;
-  my = e.clientY;
-  mouseInBounds = true;
-  
-  // Don't process game movement when help is open or player is stunned
-  if (overheatStunned) return;
-  
-  // Track mouse movement for automatic collection
-  mouseMoving = true;
-  lastMovementTime = Date.now();
-  charging = true; // Auto-charge when moving
-};
-
-c.onmouseleave = () => {
-  mouseInBounds = false;
-};
-
-c.onmouseenter = () => {
-  mouseInBounds = true;
-};
-
-c.onmousedown = (e) => {
-  // Check for restart click when game over
-  if (gameOver) {
-    // Reset game state
-    gameOver = false;
-    score = 0; // Reset score for new run
-    glowPower = 0;
-    charging = false;
-    mouseMoving = false;
-    scoreTexts = [];
-    otherFireflies = [];
-    catEyeColor = "gold";
-    catEyeChangeTimer = 0;
-    nextColorChangeTime = 600 + F(r() * 300); // Random 10-15 seconds on restart (forgiving)
-    lastWarningState = false; // Reset warning state
-    summonHeat = 0; // Reset heat system
-    summonOverheated = false; // Reset overheat state
-    overheatCooldown = 0; // Reset overheat cooldown
-    overheatStunned = false; // Reset stun state
-    mouseNearCat = false; // Reset cat proximity
-    catProximity = 0; // Reset proximity value
     
-    // Reset tutorial state
-    tutorialStep = 0;
-    tutorialTimer = 0;
-    firstDeliveryMade = false;
-    
-    // Reset click effects
-    clickSparkles = [];
-    manaEnergy = 100; // Fixed: use manaEnergy
-    shieldActive = false;
-    shieldCooldown = 0;
-    lastShieldTime = 0;
-    
-    startTime = Date.now(); // Reset start time for difficulty scaling
-    runStartTime = Date.now(); // Reset run timer
-    // Spawn starting fireflies (fewer for tutorial, more for experienced players)
-    let spawnCount = tutorialComplete ? 20 : 8;
-    for (let i = 0; i < spawnCount; i++) spawnFirefly();
-    if (audioEnabled) {
-      T(600, 0.2, 0.1); // Restart sound
-      // Start music after restart if conditions are met
-      if (!showHelp && pageVisible) {
-        setTimeout(startMusic, 200);
-      }
-    }
-    return;
-  }
-
-  // Track mouse press
-  mousePressed = true;
-  mouseDownTime = Date.now();
-};
-
-c.onmouseup = (e) => {
-  if (!gameStarted || gameOver) return;
-  
-  let holdDuration = Date.now() - mouseDownTime;
-  mousePressed = false;
-
-  // Quick click summoning with heat system
-  if (holdDuration < 150) {
-    if (canSummon()) {
-      createClickSparkles(e.clientX, e.clientY);
-      spawnFirefly("red"); // Each click summons 1 firefly
-      useMana(10); // Fixed 10 mana cost
-      summonHeat = Math.min(100, summonHeat + 8); // Add heat per click
-      T(800, 0.1, 0.1); // Click sound
-      
-      // Check for overheat
-      if (summonHeat >= 100) {
-        summonOverheated = true;
-        overheatCooldown = 300; // 5 seconds of overheat penalty - substantial punishment
-        overheatStunned = true; // Player can't move during initial stun
-        T(200, 0.3, 0.15); // Overheat warning sound
-      }
-    } else if (summonOverheated) {
-      T(120, 0.08, 0.03); // Subtle bonk sound when overheated - lower pitch and volume
-    } else if (manaEnergy < 10) {
-      // Not enough mana - red flash and subtle sound
-      manaFlashTimer = 30; // 0.5 seconds of red flash
-      T(100, 0.06, 0.02); // Very subtle "empty" sound
-    }
-  }
-  
-  // Deactivate shield when mouse released (if it was from holding)
-  if (shieldActive && holdDuration >= 150) {
-    shieldActive = false;
-    shieldCooldown = 180; // 3 second cooldown
-  }
-};
-
-c.onclick = (e) => {
-  // This event fires after mousedown/mouseup, so we don't need additional logic here
-  // The charging logic is already handled by mousedown/mouseup
-};
-
-document.onkeydown = (e) => {
-  // Handle mute toggle with M key
-  if (e.code === "KeyM") {
-    e.preventDefault();
-    audioEnabled = !audioEnabled;
-    if (audioEnabled) {
-      T(600, 0.1, 0.08); // Soft confirmation chime
-      // Restart music if game is running and help is not shown
-      if (gameStarted && !showHelp && pageVisible) {
-        setTimeout(startMusic, 100);
-      }
-    } else {
-      stopMusic(); // Stop music when muting
-    }
-    return;
-  }
-
-  // Handle rules toggle with R key, and ESC to close
-  if (e.code === "KeyR" || e.code === "Escape") {
-    e.preventDefault();
-    showHelp = !showHelp;
-    
-    // Control music based on help menu state
-    if (showHelp) {
-      stopMusic(); // Stop music when help is shown
-    } else if (audioEnabled && gameStarted && pageVisible) {
-      setTimeout(startMusic, 100); // Restart music when help is closed
-    }
-    return;
-  }
-
-  // Debug: 'C' key to test countdown/game over view
-  if (e.code === "KeyC") {
-    e.preventDefault();
-    catEyeChangeTimer = nextColorChangeTime - 180; // Start warning period
-    return;
-  }
-
-  // Handle shield with spacebar
-  if (e.code === "Space") {
-    e.preventDefault();
-    
-    if (!spacePressed) {
-      spacePressed = true;
-      spaceDownTime = Date.now();
-    }
-    return;
-  }
-};
-
-document.onkeyup = (e) => {
-  if (!gameStarted || gameOver) return;
-  
-  if (e.code === "Space") {
-    e.preventDefault();
-    
-    let holdDuration = Date.now() - spaceDownTime;
-    spacePressed = false;
-
-    if (holdDuration < 150) { 
-      // Quick spacebar tap - summon firefly with heat system
-      if (!summonOverheated && manaEnergy >= 10) {
-        createClickSparkles(mx, my); // Use current mouse position
-        spawnFirefly("red"); // Each tap summons 1 firefly
-        manaEnergy = Math.max(0, manaEnergy - 10); // Fixed 10 mana cost
-        summonHeat = Math.min(100, summonHeat + 8); // Add heat per tap
-        T(800, 0.1, 0.1); // Click sound
-        
-        // Check for overheat
-        if (summonHeat >= 100) {
-          summonOverheated = true;
-          overheatCooldown = 300; // 5 seconds of overheat penalty - substantial punishment
-          overheatStunned = true; // Player can't move during initial stun
-          T(200, 0.3, 0.15); // Overheat warning sound
-        }
-      } else if (summonOverheated) {
-        T(120, 0.08, 0.03); // Subtle bonk sound when overheated - lower pitch and volume
-      } else if (manaEnergy < 10) {
-        // Not enough mana - red flash and subtle sound
-        manaFlashTimer = 30; // 0.5 seconds of red flash
-        T(100, 0.06, 0.02); // Very subtle "empty" sound
-      }
-    }
-    
-    // Deactivate shield when spacebar released (if it was from holding)
-    if (shieldActive && holdDuration >= 150) {
-      shieldActive = false;
-      shieldCooldown = 180; // 3 second cooldown
-    }
-    return;
-  }
-};
-
-// Score Text System
-function drawScoreTexts() {
-  scoreTexts.forEach((text) => {
-    let progress = text.life / text.maxLife;
-    let alpha, scale;
-
-    if (progress < 0.2) {
-      // Fade in and grow phase
-      alpha = progress / 0.2;
-      scale = 0.5 + (progress / 0.2) * 0.8; // Grow from 50% to 130%
-    } else if (progress < 0.8) {
-      // Stable phase
-      alpha = 1;
-      scale = 1.3;
-    } else {
-      // Fade out phase
-      alpha = (1 - progress) / 0.2;
-      scale = 1.3;
-    }
-
-    x.save();
-    x.globalAlpha = alpha;
-    x.translate(text.x, text.y);
-    x.scale(scale, scale);
-
-    // Draw text with outline for visibility
-    x.font = "bold 20px monospace";
-    setFill("#000");
-    x.fillText(text.text, -1, 1); // Shadow
-    x.fillText(text.text, 1, 1);
-    x.fillText(text.text, -1, -1);
-    x.fillText(text.text, 1, -1);
-
-    setFill(text.color || "#ffff00"); // Use text color or default yellow
-    x.fillText(text.text, 0, 0);
-
-    x.restore();
+    // Draw firefly body
+    setFill(baseColor + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+    x.beginPath();
+    x.arc(firefly.x, firefly.y, firefly.size, 0, TAU);
+    x.fill();
   });
-}
+};
 
-// UI System
-function drawUI() {
-  // Story opening screen
-  if (!gameStarted) {
-    // Semi-transparent dark overlay
-    setFill(BLACK(0.7));
-    x.fillRect(0, 0, w, h);
+// Check delivery zone for captured fireflies
+const checkDeliveryZone = (playerX, playerY) => {
+  const centerX = w / 2;
+  const centerY = h * 0.2; // Match the cat nose position
+  const distance = hyp(playerX - centerX, playerY - centerY);
+  
+  if (distance < CFG.deliveryRadius) {
+    const capturedFireflies = otherFireflies.filter(f => f.captured);
+    const requiredFireflies = getRequiredFireflies();
     
-    x.textAlign = "center";
-    setFill("#ffffff");
-    
-    // Title
-    x.font = "32px serif";
-    x.fillText("The Cat & the Luminid", w / 2, h / 2 - 140);
-    
-    // Story text
-    x.font = "16px serif";
-    setFill("#cccccc");
-    let storyLines = [
-      "The Cat feeds on light to keep the endless night alive.",
-      "You are the Luminid, guide of fireflies, protector and sacrificer.",
-      "Feed the Cat or dawn will come and the magic will end.",
-      "How long can you survive the night's growing hunger?"
-    ];
-    
-    storyLines.forEach((line, i) => {
-      x.fillText(line, w / 2, h / 2 - 80 + i * 25);
-    });
-    
-    // Instructions
-    x.font = "14px serif";
-    x.fillStyle = "#999999";
-    x.fillText("(Move your mouse to gather fireflies and sacrifice them to The Cat)", w / 2, h / 2 + 40);
-    
-    // Separator
-    x.fillStyle = "#666666";
-    x.fillText("⸻", w / 2, h / 2 + 70);
-    
-    // Simple hint
-    x.font = "12px serif";
-    x.fillStyle = "#888888";
-    x.fillText("Press 'R' for rules once you start playing", w / 2, h / 2 + 90);
-    
-    // Start prompt - moved lower to avoid overlap
-    x.font = "18px serif";
-    x.fillStyle = "#ffffff";
-    x.fillText("Click or press any key to begin", w / 2, h / 2 + 130);
-    
-    x.textAlign = "left";
-    return;
-  }
-  
-  // Current score display (top right)
-  x.font = "18px monospace";
-  x.fillStyle = "#ffffff";
-  x.textAlign = "right";
-  x.fillText(`Score: ${score}`, w - 20, 30);
-  
-  // Run timer (top right, below score) - moved up to avoid overcrowding
-  if (runStartTime) {
-    let runTime = F((Date.now() - runStartTime) / 1000);
-    let minutes = F(runTime / 60);
-    let seconds = runTime % 60;
-    x.font = "14px monospace";
-    x.fillStyle = "#aaaaaa";
-    x.textAlign = "right";
-    x.fillText(`${minutes}:${seconds.toString().padStart(2, '0')}`, w - 20, 55);
-  }
-
-  x.textAlign = "left"; // Reset text alignment
-  
-  // Audio status and rules display
-  x.font = "12px monospace";
-  let audioText = audioEnabled ? "M: Unmute" : "M: Mute";
-  let rulesText = "R: Rules";
-  let combinedText = `${audioText} | ${rulesText}`;
-  let combinedWidth = x.measureText(combinedText).width;
-  x.fillStyle = "rgba(0,0,0,0.5)";
-  x.fillRect(20, h - 50, combinedWidth + 10, 30); // Add 10px padding (5px each side)
-  x.fillStyle = audioEnabled ? "#44ff44" : "#ff4444";
-  x.fillText(audioText, 25, h - 32);
-  x.fillStyle = "#aaaaaa";
-  x.fillText(" | ", 25 + x.measureText(audioText).width, h - 32);
-  x.fillStyle = "#88ccff";
-  x.fillText(rulesText, 25 + x.measureText(audioText + " | ").width, h - 32);
-
-  // Game over screen
-  if (gameOver) {
-    x.fillStyle = "rgba(0,0,0,0.8)";
-    x.fillRect(0, 0, w, h);
-
-    x.fillStyle = "#ffffff";
-    x.font = "36px monospace";
-    x.textAlign = "center";
-    x.fillText("DAWN BREAKS", w / 2, h / 2 - 100);
-
-    x.font = "18px serif";
-    x.fillStyle = "#cccccc";
-    x.fillText("The night you protected has ended", w / 2, h / 2 - 70);
-
-    x.font = "24px monospace";
-    x.fillStyle = "#ffffff";
-    x.fillText(`Final Score: ${score}`, w / 2, h / 2 - 40);
-    
-    x.font = "16px monospace";
-    x.fillStyle = "#aaaaaa";
-    x.fillText(`Fireflies Sacrificed: ${totalCollected}`, w / 2, h / 2 - 10);
-    x.fillText(`Fireflies Lost to Dawn: ${totalLost}`, w / 2, h / 2 + 10);
-    
-    if (runStartTime) {
-      let runTime = F((Date.now() - runStartTime) / 1000);
-      let minutes = F(runTime / 60);
-      let seconds = runTime % 60;
-      x.fillText(`Night Survived: ${minutes}:${seconds.toString().padStart(2, '0')}`, w / 2, h / 2 + 30);
-    }
-
-    x.font = "14px serif";
-    x.fillStyle = "#888888";
-    x.fillText("The Cat waits for another night...", w / 2, h / 2 + 55);
-
-    x.fillStyle = "#ffffff";
-    x.font = "16px monospace";
-    x.fillText("Click to begin a new night", w / 2, h / 2 + 80);
-
-    x.textAlign = "left";
-  }
-}
-
-// Help System - Elegant implementation with glowing effects
-function drawHelp() {
-  if (!showHelp) return;
-  
-  // Dark overlay
-  x.fillStyle = "rgba(0,0,0,0.9)";
-  x.fillRect(0, 0, w, h);
-  
-  // Centered content with glow effect
-  x.textAlign = "center";
-  
-  // Title with glow
-  x.font = "bold 36px serif";
-  x.shadowBlur = 20;
-  x.shadowColor = "rgba(100, 200, 200, 0.8)";
-  x.fillStyle = "rgba(150, 220, 220, 1.0)";
-  x.fillText("The Cat & the Luminid", w / 2, h / 2 - 180);
-  x.shadowBlur = 0;
-  
-  // CONTROLS section
-  x.font = "bold 20px serif";
-  x.shadowBlur = 10;
-  x.shadowColor = "rgba(100, 200, 200, 0.6)";
-  x.fillStyle = "rgba(120, 200, 200, 1.0)";
-  x.fillText("CONTROLS", w / 2, h / 2 - 120);
-  x.shadowBlur = 0;
-  
-  x.font = "18px serif";
-  x.fillStyle = "#ffffff";
-  x.fillText("Move mouse to gather fireflies", w / 2, h / 2 - 95);
-  x.fillText("Quick tap: summon fireflies (causes heat)", w / 2, h / 2 - 75);
-  x.fillText("Hold down: shield during eye flashes", w / 2, h / 2 - 55);
-  
-  // GAMEPLAY section  
-  x.font = "bold 20px serif";
-  x.shadowBlur = 10;
-  x.shadowColor = "rgba(100, 200, 200, 0.6)";
-  x.fillStyle = "rgba(120, 200, 200, 1.0)";
-  x.fillText("GAMEPLAY", w / 2, h / 2 - 10);
-  x.shadowBlur = 0;
-  
-  x.font = "18px serif";
-  x.fillStyle = "#ffffff";
-  x.fillText("Bring fireflies to cat's nose to sacrifice", w / 2, h / 2 + 15);
-  x.fillText("Normal fireflies restore +10 mana", w / 2, h / 2 + 35);
-  x.fillText("Golden fireflies restore FULL mana!", w / 2, h / 2 + 55);
-  x.fillText("Perfect shield timing = 100% protection", w / 2, h / 2 + 75);
-  
-  // TIPS section
-  x.font = "bold 20px serif";
-  x.shadowBlur = 10;
-  x.shadowColor = "rgba(100, 200, 200, 0.6)";
-  x.fillStyle = "rgba(120, 200, 200, 1.0)";
-  x.fillText("TIPS", w / 2, h / 2 + 115);
-  x.shadowBlur = 0;
-  
-  x.font = "18px serif";
-  x.fillStyle = "#ffffff";
-  x.fillText("Mana drains over time - stay active!", w / 2, h / 2 + 140);
-  x.fillText("Moving prevents firefly loss", w / 2, h / 2 + 160);
-  
-  // Close instruction - bottom center for better UI flow
-  x.font = "16px serif";
-  x.fillStyle = "rgba(150, 150, 150, 0.9)";
-  x.fillText("Press R or ESC to close", w / 2, h / 2 + 195);
-}
-
-// Tutorial guidance system
-function drawTutorialGuidance() {
-  if (tutorialComplete) return;
-  
-  x.textAlign = 'center';
-  
-  // Show initial guidance
-  if (tutorialStep === 0 && otherFireflies.length > 0) {
-    x.font = '18px Georgia, serif';
-    x.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    x.fillText('Click to summon fireflies!', w / 2, h - 80);
-    
-    x.font = '14px Georgia, serif';
-    x.fillStyle = 'rgba(200, 200, 200, 0.8)';
-    x.fillText('Move near them to collect', w / 2, h - 60);
-    x.fillText('Summoning costs mana (blue bar)', w / 2, h - 40);
-  }
-  
-  // Show shield tutorial when they have fireflies
-  if (tutorialStep >= 1 && !firstDeliveryMade) {
-    let capturedFireflies = otherFireflies.filter(f => f.captured);
-    if (capturedFireflies.length > 0) {
-      x.font = '16px Georgia, serif';
-      x.fillStyle = 'rgba(255, 255, 100, 0.9)';
-      x.fillText('Hold SPACE for shield protection!', w / 2, h - 100);
-      
-      x.font = '14px Georgia, serif';
-      x.fillStyle = 'rgba(200, 200, 200, 0.8)';
-      x.fillText('Shield protects from dawn (when cat eyes change)', w / 2, h - 80);
-      x.fillText('Shield also costs mana', w / 2, h - 60);
+    if (capturedFireflies.length >= requiredFireflies) {
+      deliverFireflies(capturedFireflies);
+      return true;
     }
   }
   
-  // Show delivery tutorial after first delivery
-  if (firstDeliveryMade && !tutorialComplete && score < 30) {
-    x.font = '16px Georgia, serif';
-    x.fillStyle = 'rgba(100, 255, 100, 0.9)';
-    x.fillText('Delivering fireflies restores mana!', w / 2, h - 80);
-    
-    x.font = '14px Georgia, serif';
-    x.fillStyle = 'rgba(200, 200, 200, 0.8)';
-    x.fillText('Balance summoning, shielding, and delivering', w / 2, h - 60);
-  }
-}
+  return false;
+};
 
-// Main Game Loop
-function L() {
-  let now = Date.now(); // Cache Date.now() at start of frame
+// Deliver captured fireflies to the cat
+const deliverFireflies = (capturedFireflies) => {
+  const basePoints = capturedFireflies.length;
   
-  drawBackground();
-  drawCatEyes(now);
-  drawGrass();
-
-  // Always process some basic game updates even when help is shown
-  floatTimer += 0.1;
-
-  // Draw help overlay if enabled
-  if (showHelp) {
-    drawHelp();
-    // Still need to continue the main loop for the frame to complete
-    // Just draw UI and finish
-    drawUI();
-    requestAnimationFrame(L);
-    return;
-  }
-
-  // Main game logic only runs when help is not shown
-  // Handle mouse movement detection with extended grace period for trackpad users
-  // Disable movement buffer when shield is active (simpler approach)
-  let shouldDisableMovement = shieldActive;
+  // Streak bonus system
+  deliveryStreak++;
+  bestStreak = Math.max(bestStreak, deliveryStreak);
   
-  if (mouseMoving && !shouldDisableMovement && now - lastMovementTime > movementBuffer) { // Reduced to 300ms for quicker response
-    mouseMoving = false;
-    charging = false; // Stop charging when movement buffer expires
-    glowPower = 0; // Immediate dispersion after buffer
+  // Calculate streak multiplier (1x, 1.5x, 2x, 2.5x, 3x max)
+  const streakMultiplier = Math.min(3, 1 + (deliveryStreak - 1) * 0.5);
+  const pointsAwarded = Math.floor(basePoints * streakMultiplier);
+  
+  score += pointsAwarded;
+  totalCollected += capturedFireflies.length;
+  
+  // Remove delivered fireflies
+  otherFireflies = otherFireflies.filter(f => !f.captured);
+  
+  // Reset summoning heat as reward
+  summonHeat = Math.max(0, summonHeat - capturedFireflies.length * 15);
+  if (summonOverheated && summonHeat <= 40) {
+    summonOverheated = false;
   }
   
-  // If shield is active or holding, keep charging active
-  if (shouldDisableMovement) {
-    charging = true;
-    mouseMoving = false; // Don't let movement buffer interfere
+  // Restore some mana
+  manaEnergy = Math.min(100, manaEnergy + capturedFireflies.length * 5);
+  
+  // Visual feedback - simple score only
+  let feedbackText = `+${pointsAwarded}`;
+  let feedbackColor = "#00ff00";
+  
+  // Color based on streak level but no text clutter
+  if (deliveryStreak >= 5) {
+    feedbackColor = "#ffaa00"; // Hot orange for big streaks
+  } else if (deliveryStreak >= 3) {
+    feedbackColor = "#88ff88"; // Bright green for good streaks
   }
-
-  // Handle mouse out of bounds - drift toward center
-  if (!mouseInBounds) {
-    let centerX = w / 2;
-    let centerY = h / 2;
-    mx += (centerX - mx) * 0.02; // Gentle drift toward center
-    my += (centerY - my) * 0.02;
+  
+  addScoreText(feedbackText, w / 2, h / 2, feedbackColor, 500); // Increased to 500 frames for score feedback
+  
+  // Spawn new fireflies to maintain population
+  const spawnCount = Math.min(3, capturedFireflies.length);
+  for (let i = 0; i < spawnCount; i++) {
+    spawnFirefly();
   }
-
-  let isIdle = mx === lastMx && my === lastMy;
-  let fx = mx + (isIdle ? sin(floatTimer) * 0.8 : 0);
-  let fy = my + (isIdle ? cos(floatTimer * 1.2) * 0.5 : 0);
-  lastMx = mx;
-  lastMy = my;
-
-  // Update timer logic removed - no more time limit
-
-  updateCatEyes(now);
-  updateParticles(fx, fy);
-  updateFireflies(fx, fy);
-  updateOrbitingFireflies();
-
-  // Update score texts
-  scoreTexts = scoreTexts.filter((text) => {
-    text.life++;
-    text.y -= 0.5; // Float upward
-    return text.life < text.maxLife;
-  });
-
-  // Activate shield if holding mouse or space for 150ms+
-  if (held150(now) && 
-      manaEnergy > 0 && !shieldActive && shieldCooldown === 0 && !summonOverheated) {
-    shieldActive = true;
-    lastShieldTime = now;
-    T(600, 0.1, 0.1); // Shield activation sound
-    
-    // Tutorial progression - advance when they use shield
+  
+  playTone(600, 0.3, 0.15); // Delivery success sound
+  
+  // Tutorial progression
+  if (!firstDeliveryMade) {
+    firstDeliveryMade = true;
+    showTutorialElements = false; // Hide tutorial elements after first delivery
     if (!tutorialComplete && tutorialStep === 0) {
-      tutorialStep = 1;
+      tutorialStep = 1; // Move to mana tutorial after first delivery
+      // Spawn more fireflies for next phase
+      for (let i = 0; i < 8; i++) {
+        spawnFirefly();
+      }
     }
-  } else if (held150(now) && 
-             manaEnergy <= 0 && !shieldActive && shieldCooldown === 0 && !summonOverheated) {
-    // Trying to shield with no mana - red flash and subtle sound
-    manaFlashTimer = 30; // 0.5 seconds of red flash
-    T(100, 0.06, 0.02); // Very subtle "empty" sound
   }
   
-  // Drain mana while shield is active - gets more expensive over time
-  if (shieldActive) {
-    let drainRate = 1 + getDifficulty(); // Drain faster as score increases
-    manaEnergy = Math.max(0, manaEnergy - drainRate);
-    if (manaEnergy === 0) {
-      shieldActive = false;
-      shieldCooldown = 180 + getDifficulty() * 3.6; // Longer cooldown as score increases
-    }
+  // Complete tutorial after reaching final step and some basic progress
+  if (!tutorialComplete && tutorialStep >= 4 && (score >= 15 || totalCollected >= 3)) {
+    tutorialComplete = true;
+    localStorage.setItem('tutorialComplete', 'true');
+    addScoreText('Tutorial Complete! Good luck...', w / 2, h / 2 + 30, '#00ff00', 400);
   }
+};
+
+// ===== PLAYER SYSTEM =====
+
+// Get current player position (follows mouse)
+const getPlayerPosition = () => {
+  return { x: mx, y: my };
+};
+
+// Update player state
+const updatePlayer = (now) => {
+  // Track mouse movement for auto-charging
+  const movementThreshold = 5;
+  const timeSinceMovement = now - lastMovementTime;
+  
+  if (Math.abs(mx - lastMx) > movementThreshold || Math.abs(my - lastMy) > movementThreshold) {
+    mouseMoving = true;
+    lastMovementTime = now;
+    charging = true; // Auto-charge when moving
+  } else if (timeSinceMovement > 300) { // 300ms buffer
+    mouseMoving = false;
+  }
+  
+  // Update glow power based on movement
+  if (mouseMoving || charging) {
+    glowPower = Math.min(100, glowPower + 2);
+  } else {
+    glowPower = Math.max(0, glowPower - 1);
+  }
+  
+  // Quick flash effect
+  if (quickFlashPower > 0) {
+    quickFlashPower = Math.max(0, quickFlashPower - 3);
+  }
+  
+  // Update summoning heat system
+  updateSummonHeat();
   
   // Update shield cooldown
   if (shieldCooldown > 0) {
     shieldCooldown--;
   }
   
-  // NO automatic mana regeneration - mana only comes from sacrificing fireflies!
-  // This makes resource management much more strategic
-  
-  // Passive mana drain - slowly depletes to encourage active play
-  if (manaEnergy > 0 && !shieldActive) {
-    // Very slow drain: about 1 mana every 4 seconds (0.25 per second at 60fps)
-    // Gets slightly faster as score increases to add progressive pressure
-    let passiveDrain = 0.004 + (score * 0.00001); // Base 0.004, increases very slowly with score
-    manaEnergy = Math.max(0, manaEnergy - passiveDrain);
+  // Deactivate shield if input released, mana depleted, or overheated
+  if (shieldActive) {
+    const inputHeld = spacePressed || mousePressed;
+    
+    if (!inputHeld || manaEnergy <= 0 || summonOverheated) {
+      shieldActive = false;
+      stopShieldHum(); // Stop the hum
+      if (!inputHeld) {
+        // No cooldown when released manually
+        shieldCooldown = 0;
+      } else {
+        // Short cooldown when depleted/overheated
+        shieldCooldown = 60; // 1 second
+      }
+    } else {
+      // Drain mana while shield is active
+      manaEnergy = Math.max(0, manaEnergy - 0.15); // Slightly faster drain
+    }
   }
+  
+  // Mana only regenerates when turning in fireflies - removed automatic regeneration
+};
 
-  // Update heat system
+// Update summoning heat system
+const updateSummonHeat = () => {
+  // Cool down heat over time
+  if (summonHeat > 0) {
+    summonHeat = Math.max(0, summonHeat - 0.2);
+  }
+  
+  // Check for overheating
+  if (summonHeat >= 100 && !summonOverheated) {
+    summonOverheated = true;
+    overheatStunned = true;
+    overheatCooldown = 180; // 3 seconds of cooldown (60fps * 3)
+    addScoreText("OVERHEATED!", mx, my - 30, "#ff4444", 300); // Increased from 120 to 300
+    playTone(200, 0.5, 0.1); // Overheat warning sound
+    
+    // Disperse captured fireflies aggressively
+    otherFireflies.forEach(firefly => {
+      if (firefly.captured) {
+        firefly.captured = false;
+        // Give them strong dispersal velocity away from player
+        const disperseAngle = Math.atan2(firefly.y - my, firefly.x - mx);
+        const disperseForce = 8 + r() * 4; // Strong dispersal force
+        firefly.vx = Math.cos(disperseAngle) * disperseForce;
+        firefly.vy = Math.sin(disperseAngle) * disperseForce;
+        // Add some randomness to the dispersal
+        firefly.vx += (r() - 0.5) * 6;
+        firefly.vy += (r() - 0.5) * 6;
+      }
+    });
+  }
+  
+  // Handle overheat cooldown - lasts exactly 3 seconds
   if (summonOverheated) {
     overheatCooldown--;
     if (overheatCooldown <= 0) {
-      summonOverheated = false;
       overheatStunned = false;
-      summonHeat = 40; // Start cooling down from 40% when overheat ends (lower than before)
-    }
-    // During first 60 frames (1 second), player is stunned and can't move
-    if (overheatCooldown > 240) {
-      overheatStunned = true;
-    } else {
-      overheatStunned = false;
-    }
-  } else {
-    // Cool down heat gradually when not overheated
-    if (summonHeat > 0) {
-      summonHeat = Math.max(0, summonHeat - 0.6); // Slightly slower cooling for more strategic play
+      summonOverheated = false; // End overheat after 3 seconds
+      overheatCooldown = 0;
     }
   }
+};
 
-  // Update player glow
-  if (charging && glowPower < 120) glowPower += 1.5;
-  else if (!charging && glowPower > 0) glowPower -= glowPower > 100 ? 0.3 : 1;
-  if (quickFlashPower > 0) quickFlashPower -= 4;
+// Draw the player firefly (luminid)
+const drawPlayerFirefly = (playerX, playerY, now) => {
+  // Don't draw if player is off-screen or stunned
+  if (!mouseInBounds && !charging) return;
   
-  // Update mana flash timer
-  if (manaFlashTimer > 0) manaFlashTimer--;
+  // Player firefly appearance
+  const isMoving = mouseMoving || charging;
   
-  // DEBUG: Log array sizes to detect memory leaks
-  // Update summoning visual effects
-  updateClickEffects();
-
-  maxed = glowPower > 100;
-  if (maxed) {
-    flashTimer += 0.3;
-    if (sin(flashTimer) < -0.7) glowPower = 0;
-  }
-
-
-  drawParticles();
-  drawFireflies(now);
-  drawPlayerFirefly(fx, fy, now);
-  drawDeliveryZone(now); // Show delivery requirements
-  drawClickEffects(); // Draw simple click sparkles and shield meter
-  drawScoreTexts();
-  drawUI();
-  drawTutorialGuidance(); // Show tutorial hints for new players
-
-  // Screen flash effect synced with cat eye warning flashes
-  if (gameStarted && !gameOver && colorChangesEnabled) {
-    let timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
-    let isWarning = timeUntilChange <= 180; // 3 seconds total warning (60 frames per flash)
+  // Exhausted appearance when overheated - calm gray instead of aggressive red
+  if (summonOverheated) {
+    const weakPulse = sin(now * 0.003) * 0.2 + 0.5; // Very slow, weak pulse
+    const exhaustedColor = `rgba(120, 120, 120, ${weakPulse})`; // Dull gray
     
-    if (isWarning && otherFireflies.some(f => f.captured)) {
-      // Mario Kart style: 3 distinct flashes with perfect timing opportunity
-      let flashNumber = F((180 - timeUntilChange) / 60); // 0, 1, or 2 (for flashes 1, 2, 3)
-      let flashProgress = ((180 - timeUntilChange) % 60) / 60; // 0 to 1 within each flash
+    // Sluggish, sputtery movement when stunned
+    if (overheatStunned) {
+      const sputter = sin(now * 0.02) * 0.5; // Slow, gentle movement
+      playerX += sputter;
+      playerY += sputter * 0.5;
+    }
+    
+    setFill(exhaustedColor);
+  } else {
+    // Normal healthy colors
+    const firefly_color = isMoving ? "#00aaff" : "#aaaacc"; // Cyan when moving, gray when idle
+    setFill(firefly_color);
+  }
+  
+  // Draw main firefly body
+  x.beginPath();
+  x.arc(playerX, playerY, 3, 0, TAU);
+  x.fill();
+  
+  // Calculate total glow intensity - much dimmer when exhausted
+  const baseGlow = 20;
+  const enhancedGlow = charging ? 40 : 0;
+  const shieldGlow = shieldActive ? 50 : 0;
+  let totalGlow = Math.max(glowPower, quickFlashPower, baseGlow + enhancedGlow + shieldGlow);
+  
+  // Dramatically reduce glow when overheated
+  if (summonOverheated) {
+    totalGlow *= 0.2; // Only 20% of normal brightness
+  }
+  
+  // Draw glow effect
+  const glowIntensity = totalGlow / 100;
+  let glowColor;
+  
+  if (summonOverheated) {
+    // Dull gray glow when exhausted
+    glowColor = `rgba(100, 100, 100, ${glowIntensity * 0.3})`;
+  } else {
+    // Normal colorful glow
+    glowColor = isMoving ? 
+      `rgba(0, 170, 255, ${glowIntensity * 0.6})` : 
+      `rgba(170, 170, 204, ${glowIntensity * 0.6})`;
+  }
+  
+  const gradient = x.createRadialGradient(
+    playerX, playerY, 0,
+    playerX, playerY, totalGlow
+  );
+  gradient.addColorStop(0, glowColor);
+  gradient.addColorStop(1, "transparent");
+  
+  setFill(gradient);
+  x.beginPath();
+  x.arc(playerX, playerY, totalGlow, 0, TAU);
+  x.fill();
+  
+  // Draw mana/shield indicator around player (always show)
+  drawPlayerManaRing(playerX, playerY, now);
+};
+
+// Draw circular mana/shield indicator around player
+const drawPlayerManaRing = (playerX, playerY, now) => {
+  const capturedCount = otherFireflies.filter(f => f.captured).length;
+  const baseRadius = 18 + Math.min(capturedCount * 2, 12);
+  
+  x.save();
+  
+  // Magical sparkle particles around the mana ring
+  const sparkleRadius = baseRadius + 5;
+  const sparkleCount = 8;
+  for (let i = 0; i < sparkleCount; i++) {
+    const angle = (now * 0.005 + i * TAU / sparkleCount) % TAU;
+    const sparkleX = playerX + cos(angle) * sparkleRadius;
+    const sparkleY = playerY + sin(angle) * sparkleRadius;
+    const twinkle = (sin(now * 0.02 + i) * 0.5 + 0.5) * 0.8;
+    
+    x.shadowColor = "#88ffaa";
+    x.shadowBlur = 8;
+    setFill(`rgba(136, 255, 170, ${twinkle})`);
+    x.beginPath();
+    x.arc(sparkleX, sparkleY, 1.5, 0, TAU);
+    x.fill();
+    x.shadowBlur = 0;
+  }
+  
+  // Mana ring with magical glow - subtle and ethereal
+  const manaAngle = (manaEnergy / 100) * TAU;
+  
+  // Soft background ring with barely visible outline
+  x.shadowColor = "#ffffff";
+  x.shadowBlur = 8;
+  setStroke("#ffffff15");
+  setLineWidth(2);
+  x.beginPath();
+  x.arc(playerX, playerY, baseRadius, 0, TAU);
+  x.stroke();
+  x.shadowBlur = 0;
+  
+  // Mana indicator as soft floating dots instead of solid ring
+  if (manaEnergy > 0) {
+    const manaColor = manaEnergy > 50 ? "#88ffaa" : manaEnergy > 20 ? "#ffcc88" : "#ffaaaa";
+    const dotCount = Math.ceil((manaEnergy / 100) * 12); // 0-12 dots based on mana
+    
+    for (let i = 0; i < dotCount; i++) {
+      const angle = (i / 12) * TAU - Math.PI / 2; // Start from top
+      const dotX = playerX + cos(angle) * baseRadius;
+      const dotY = playerY + sin(angle) * baseRadius;
+      const pulse = sin(now * 0.01 + i * 0.5) * 0.3 + 0.7;
       
-      // Each flash lasts exactly 1 second (60 frames)
-      let flashAlpha = 0;
-      
-      if (flashNumber < 3) { // Only flash 3 times
-        // Softer red color and gentle pulse pattern
-        let pulseIntensity = sin(flashProgress * Math.PI); // Smooth 0-1-0 curve for each flash
+      // Soft glowing dots
+      x.shadowColor = manaColor;
+      x.shadowBlur = 6;
+      setFill(manaColor + Math.floor(pulse * 128).toString(16).padStart(2, '0'));
+      x.beginPath();
+      x.arc(dotX, dotY, 1.5, 0, TAU);
+      x.fill();
+      x.shadowBlur = 0;
+    }
+    
+    // Alternative: Soft particle trail effect when mana changes
+    if (manaEnergy < 100) {
+      const trailIntensity = (100 - manaEnergy) / 100;
+      for (let i = 0; i < 3; i++) {
+        const trailAngle = now * 0.005 + i * TAU / 3;
+        const trailRadius = baseRadius + 3 + sin(now * 0.02 + i) * 2;
+        const trailX = playerX + cos(trailAngle) * trailRadius;
+        const trailY = playerY + sin(trailAngle) * trailRadius;
         
-        // Progressive urgency: flash 1 = gentle, flash 2 = medium, flash 3 = urgent
-        let baseIntensity = [0.08, 0.12, 0.18][flashNumber]; // Softer than before
-        flashAlpha = baseIntensity * pulseIntensity;
-        
-        // Softer red color (was 255,50,50 - now 200,80,80 for less harsh feel)
-        x.fillStyle = `rgba(200, 80, 80, ${flashAlpha})`;
-        x.fillRect(0, 0, w, h);
-        
-        // Perfect timing window: activate shield during flash 2 for optimal protection
-        // This gives players clear visual feedback about the timing sweet spot
+        x.shadowColor = "#aaccff";
+        x.shadowBlur = 4;
+        setFill(`rgba(170, 204, 255, ${trailIntensity * 0.5})`);
+        x.beginPath();
+        x.arc(trailX, trailY, 1, 0, TAU);
+        x.fill();
+        x.shadowBlur = 0;
       }
     }
   }
-
-  // Periodic cleanup to prevent memory leaks - run every 5 seconds
-  if (now % 5000 < 50) {
-    // Only clean up arrays that actually need it, not fireflies!
-    // The firefly disappearing bug was caused by removing captured fireflies here
+  
+  // Shield indicator - magical protective barrier
+  if (shieldActive) {
+    const shieldRadius = baseRadius + 10;
+    const rotation = now * 0.008;
+    const pulse = sin(now * 0.015) * 0.3 + 0.7;
     
-    // Limit array sizes as a backup
+    // Shield color - gray for all states
+    const shieldColor = summonOverheated ? "120, 120, 120" : "140, 140, 140"; // Always gray
+    const shadowColor = summonOverheated ? "#888888" : "#999999";
+    
+    // Rotating magical runes/symbols
+    for (let i = 0; i < 6; i++) {
+      const angle = rotation + i * TAU / 6;
+      const runeX = playerX + cos(angle) * shieldRadius;
+      const runeY = playerY + sin(angle) * shieldRadius;
+      
+      x.shadowColor = shadowColor;
+      x.shadowBlur = summonOverheated ? 5 : 10; // Dimmer when overheated
+      setFill(`rgba(${shieldColor}, ${pulse * (summonOverheated ? 0.5 : 1)})`);
+      x.beginPath();
+      x.arc(runeX, runeY, 2, 0, TAU);
+      x.fill();
+      x.shadowBlur = 0;
+    }
+    
+    // Shimmering shield dome effect
+    x.shadowColor = shadowColor;
+    x.shadowBlur = summonOverheated ? 10 : 20; // Dimmer when overheated
+    setStroke(`rgba(${shieldColor}, ${pulse * 0.6 * (summonOverheated ? 0.5 : 1)})`);
+    setLineWidth(2);
+    x.setLineDash([6, 4]);
+    x.lineDashOffset = -rotation * 8;
+    x.beginPath();
+    x.arc(playerX, playerY, shieldRadius - 3, 0, TAU);
+    x.stroke();
+    x.setLineDash([]);
+    x.shadowBlur = 0;
+  }
+  
+  // Overheat warning - subtle gray exhaustion instead of aggressive red
+  if (summonOverheated) {
+    const exhaustionRadius = baseRadius + 8;
+    const weakPulse = sin(now * 0.005) * 0.2 + 0.3; // Very slow, weak pulse
+    
+    // Dim, exhausted particles that barely move
+    for (let i = 0; i < 3; i++) {
+      const angle = now * 0.001 + i * TAU / 3; // Very slow movement
+      const sparkX = playerX + cos(angle) * (exhaustionRadius + sin(now * 0.002 + i) * 2);
+      const sparkY = playerY + sin(angle) * (exhaustionRadius + sin(now * 0.002 + i) * 2);
+      
+      setFill(`rgba(120, 120, 120, ${weakPulse})`); // Dull gray
+      x.beginPath();
+      x.arc(sparkX, sparkY, 1, 0, TAU);
+      x.fill();
+    }
+    
+    // Faint gray exhaustion aura - no glow, just subtle presence
+    setStroke(`rgba(100, 100, 100, ${weakPulse * 0.4})`);
+    setLineWidth(1);
+    x.beginPath();
+    x.arc(playerX, playerY, exhaustionRadius, 0, TAU);
+    x.stroke();
+  }
+  
+  x.restore();
+};
+
+// ===== PARTICLES & EFFECTS SYSTEM =====
+
+// Update all particle effects
+const updateParticles = () => {
+  // Update regular particles
+  particles.forEach(particle => {
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    particle.life++;
+    
+    // Apply gravity and air resistance
+    if (!particle.isBurst) {
+      particle.vy += 0.1; // Gravity
+      particle.vx *= 0.98; // Air resistance
+      particle.vy *= 0.98;
+    }
+  });
+  
+  // Remove expired particles
+  particles = particles.filter(p => p.life < p.maxLife);
+  
+  // Update click sparkles
+  clickSparkles.forEach(sparkle => {
+    sparkle.life++;
+    sparkle.x += sparkle.vx;
+    sparkle.y += sparkle.vy;
+    sparkle.vx *= 0.95;
+    sparkle.vy *= 0.95;
+  });
+  
+  // Remove expired sparkles
+  clickSparkles = clickSparkles.filter(s => s.life < s.maxLife);
+};
+
+// Draw all particle effects
+const drawParticles = () => {
+  // Draw regular particles
+  particles.forEach(particle => {
+    const progress = particle.life / particle.maxLife;
+    const alpha = 1 - progress;
+    const size = particle.size * (1 - progress * 0.5);
+    
+    if (particle.glow) {
+      // Glowing particle with gradient
+      const gradient = x.createRadialGradient(
+        particle.x, particle.y, 0,
+        particle.x, particle.y, size * 3
+      );
+      gradient.addColorStop(0, particle.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+      gradient.addColorStop(1, "transparent");
+      
+      setFill(gradient);
+      x.beginPath();
+      x.arc(particle.x, particle.y, size * 3, 0, TAU);
+      x.fill();
+    }
+    
+    // Particle core
+    setFill(particle.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+    x.beginPath();
+    x.arc(particle.x, particle.y, size, 0, TAU);
+    x.fill();
+  });
+  
+  // Draw click sparkles
+  clickSparkles.forEach(sparkle => {
+    const progress = sparkle.life / sparkle.maxLife;
+    const alpha = 1 - progress;
+    const size = sparkle.size * (1 - progress * 0.3);
+    
+    setFill(`rgba(255, 255, 255, ${alpha})`);
+    x.beginPath();
+    x.arc(sparkle.x, sparkle.y, size, 0, TAU);
+    x.fill();
+  });
+};
+
+// Create dispersal effect when fireflies are lost
+const createDispersalEffect = (firefly) => {
+  for (let i = 0; i < 3; i++) {
+    particles.push({
+      x: firefly.x,
+      y: firefly.y,
+      vx: (r() - 0.5) * 3,
+      vy: (r() - 0.5) * 3,
+      size: 1 + r(),
+      life: 0,
+      maxLife: 20 + r() * 15,
+      color: "#ff6666",
+      alpha: 0.7,
+      glow: true,
+    });
+  }
+};
+
+// Create click effect at mouse position
+const createClickEffect = (x, y) => {
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * TAU;
+    clickSparkles.push({
+      x: x,
+      y: y,
+      vx: cos(angle) * (2 + r() * 3),
+      vy: sin(angle) * (2 + r() * 3),
+      size: 1 + r() * 2,
+      life: 0,
+      maxLife: 30 + r() * 20,
+    });
+  }
+};
+
+// Summoning effect for new fireflies
+const createSummonEffect = (x, y) => {
+  for (let i = 0; i < 6; i++) {
+    const angle = r() * TAU;
+    particles.push({
+      x: x,
+      y: y,
+      vx: cos(angle) * (1 + r() * 2),
+      vy: sin(angle) * (1 + r() * 2),
+      size: 1 + r(),
+      life: 0,
+      maxLife: 40 + r() * 20,
+      color: "#88ff88",
+      glow: true,
+    });
+  }
+};
+
+// ===== INPUT HANDLING SYSTEM =====
+
+// Mouse movement handler
+const handleMouseMove = (e) => {
+  lastMx = mx;
+  lastMy = my;
+  mx = e.clientX;
+  my = e.clientY;
+  mouseInBounds = true;
+  
+  // Don't process movement when stunned
+  if (overheatStunned) return;
+  
+  mouseMoving = true;
+  lastMovementTime = Date.now();
+  charging = true; // Auto-charge when moving
+};
+
+// Mouse down handler
+const handleMouseDown = (e) => {
+  if (showHelp) {
+    showHelp = false;
+    return;
+  }
+  
+  if (gameOver || gameWon) {
+    restartGame();
+    // Don't return - let the click continue to be processed for the new game
+  }
+  
+  mousePressed = true;
+  mouseDownTime = Date.now();
+  hasPlayedChime = false; // Reset chime flag for mouse too
+  
+  // Set up delayed shield activation for hold detection
+  if (canShield()) {
+    setTimeout(() => {
+      if (mousePressed && (Date.now() - mouseDownTime) >= HOLD_THRESHOLD) {
+        // Still holding after delay - it's a hold action
+        if (manaEnergy > 0 && !shieldActive && shieldCooldown === 0 && !summonOverheated) {
+          activateShield(true); // true = hold action, play hum
+        }
+      }
+    }, HOLD_THRESHOLD);
+  }
+  
+  createClickEffect(mx, my);
+};
+
+// Mouse up handler  
+const handleMouseUp = (e) => {
+  if (!gameStarted || gameOver) return;
+  
+  const holdDuration = Date.now() - mouseDownTime;
+  mousePressed = false;
+  
+  // Handle different actions based on hold duration
+  if (holdDuration < HOLD_THRESHOLD) {
+    // Quick click - check if it's for summoning or shielding
+    if (canSummon()) {
+      summonFirefly();
+    } else if (canShield()) {
+      // Quick shield tap
+      activateShield(false); // false = tap action, play chime
+      // Quick shield burst for taps
+      setTimeout(() => {
+        if (shieldActive) {
+          shieldActive = false;
+          stopShieldHum();
+          shieldCooldown = 0; // No cooldown for taps
+        }
+      }, 100);
+    }
+  }
+  
+  hasPlayedChime = false; // Reset for next activation
+};
+
+// Keyboard handler
+const handleKeyDown = (e) => {
+  // Close help menu if open (any key)
+  if (showHelp) {
+    e.preventDefault();
+    showHelp = false;
+    return;
+  }
+  
+  // Toggle audio
+  if (e.code === "KeyM") {
+    e.preventDefault();
+    audioEnabled = !audioEnabled;
+    if (audioEnabled && gameStarted && !showHelp && pageVisible) {
+      setTimeout(startMusic, 100);
+    } else {
+      stopMusic();
+    }
+    return;
+  }
+  
+  // Toggle help
+  if (e.code === "Escape") {
+    e.preventDefault();
+    showHelp = !showHelp;
+    return;
+  }
+  
+  // Testing shortcut to trigger game over (C key)
+  if (e.code === "KeyC") {
+    e.preventDefault();
+    if (!gameOver && !gameWon) {
+      // Simply trigger the natural game over condition
+      manaEnergy = 0;
+      otherFireflies = []; // Remove all fireflies
+    }
+    return;
+  }
+  
+  // Shield with spacebar
+  if (e.code === "Space") {
+    e.preventDefault();
+    if (!gameStarted) {
+      gameStarted = true;
+      return;
+    }
+    
+    // Only activate shield once when space is first pressed
+    if (!spacePressed && canShield()) {
+      spaceActivationTime = Date.now();
+      shieldActivationTime = spaceActivationTime; // Track this specific activation
+      hasPlayedChime = false; // Reset chime flag
+      
+      // Delay shield activation to determine if it's a tap or hold
+      setTimeout(() => {
+        if (spacePressed && shieldActivationTime === spaceActivationTime) {
+          // Still holding after delay - it's a hold action
+          activateShield(true); // true = hold action, play hum
+        }
+      }, HOLD_THRESHOLD);
+    }
+    spacePressed = true;
+  }
+};
+
+// Handle key releases
+const handleKeyUp = (e) => {
+  if (e.code === "Space") {
+    const holdDuration = Date.now() - spaceActivationTime;
+    
+    // If it was a quick tap (released before hold threshold)
+    if (holdDuration < HOLD_THRESHOLD && canShield() && manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated) {
+      activateShield(false); // false = tap action, play chime
+      // Quick shield burst for taps
+      setTimeout(() => {
+        if (shieldActive) {
+          shieldActive = false;
+          stopShieldHum();
+          shieldCooldown = 0; // No cooldown for taps
+        }
+      }, 100);
+    }
+    
+    spacePressed = false;
+    hasPlayedChime = false; // Reset for next activation
+  }
+};
+
+// Utility functions for input handling
+const canSummon = () => !summonOverheated && manaEnergy >= 10;
+const canShield = () => manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated;
+
+const summonFirefly = () => {
+  if (!canSummon()) return;
+  
+  // Add heat for summoning
+  summonHeat += 25;
+  manaEnergy = Math.max(0, manaEnergy - 10);
+  
+  // Tutorial progression - advance to shield tutorial after summoning
+  if (!tutorialComplete && tutorialStep === 1) {
+    // Check if player has summoned a few times
+    const summonCount = (100 - manaEnergy) / 10; // Rough count of summons
+    if (summonCount >= 3) {
+      tutorialStep = 2; // Move to shield tutorial
+      catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
+      setNextColorChangeTime(); // Set a fresh timing
+    }
+  }
+  
+  // Spawn firefly near mouse
+  const spawnX = mx + (r() - 0.5) * 100;
+  const spawnY = my + (r() - 0.5) * 100;
+  
+  otherFireflies.push({
+    x: clamp(spawnX, 50, w - 50),
+    y: clamp(spawnY, h * 0.3, h - 50),
+    captured: false,
+    captureOffset: { x: 0, y: 0 },
+    floatTimer: r() * TAU,
+    flashTimer: r() * TAU,
+    roamTarget: null,
+    fadeIn: 0,
+    glowIntensity: 0.5 + r() * 0.5,
+    size: 2 + r() * 2,
+  });
+  
+  createSummonEffect(spawnX, spawnY);
+  playTone(400, 0.15, 0.08);
+  quickFlashPower = 50; // Visual feedback
+};
+
+const activateShield = (isHoldAction = false) => {
+  shieldActive = true;
+  lastShieldTime = Date.now();
+  
+  // Play appropriate sound based on action type
+  handleShieldAudio(isHoldAction);
+  
+  // Tutorial progression
+  if (!tutorialComplete && tutorialStep === 0) {
+    tutorialStep = 1;
+  }
+};
+
+const restartGame = () => {
+  // Reset all game state
+  gameOver = false;
+  gameWon = false; // Reset victory state
+  gameOverTime = null; // Reset game over time
+  gameStarted = true; // Ensure game is marked as started
+  score = 0;
+  totalCollected = 0;
+  totalLost = 0;
+  deliveryStreak = 0;
+  bestStreak = 0;
+  glowPower = 0;
+  charging = false;
+  mouseMoving = false;
+  spacePressed = false; // Reset input state
+  shieldActivationTime = 0; // Reset timing
+  hasPlayedChime = false; // Reset chime state
+  particles = [];
+  otherFireflies = [];
+  scoreTexts = [];
+  clickSparkles = [];
+  
+  // Reset cat system
+  catEyeColor = "gold";
+  catEyeChangeTimer = 0;
+  nextColorChangeTime = 600 + F(r() * 300);
+  lastWarningState = false;
+  
+  // Reset player systems
+  summonHeat = 0;
+  summonOverheated = false;
+  overheatStunned = false;
+  manaEnergy = 100;
+  shieldActive = false;
+  stopShieldHum(); // Stop any shield sounds
+  shieldCooldown = 0;
+  lastShieldTime = 0;
+  
+  // Reset tutorial
+  tutorialComplete = false; // Reset tutorial state so it runs again
+  tutorialStep = 0;
+  tutorialStep3Timer = 0; // Reset step 3 timer
+  firstDeliveryMade = false;
+  showTutorialElements = true; // Show tutorial elements until first delivery
+  
+  // Reset timing
+  startTime = Date.now();
+  runStartTime = Date.now();
+  lastSpawnTime = Date.now(); // Reset spawn timer
+  
+  // Spawn initial fireflies - only 5 for tutorial step 0
+  let spawnCount;
+  if (tutorialComplete) {
+    spawnCount = 20;
+  } else if (tutorialStep === 0) {
+    spawnCount = 5; // Only 5 fireflies for first tutorial step
+  } else {
+    spawnCount = 12; // More for later tutorial steps
+  }
+  for (let i = 0; i < spawnCount; i++) {
+    spawnFirefly();
+  }
+  
+  playTone(600, 0.2, 0.1);
+};
+
+// ===== TUTORIAL SYSTEM =====
+
+// Draw tutorial guidance for new players
+const drawTutorialGuidance = () => {
+  if (tutorialComplete || showHelp) return;
+  
+  tutorialTimer += 0.02;
+  const pulse = sin(tutorialTimer) * 0.3 + 0.7;
+  
+  x.save();
+  x.textAlign = "center";
+  
+  switch (tutorialStep) {
+    case 0:
+      // First step: Collect 5 fireflies and deliver them
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.font = "18px serif";
+      x.fillText("Collect fireflies and lead them to The Cat in the Sky", w / 2, h - 100);
+      x.font = "14px serif";
+      x.fillText("Move your mouse near fireflies to collect them", w / 2, h - 75);
+      
+      // Show delivery zone ring around cat's mouth area
+      const catX = w / 2;
+      const catY = h * 0.2;
+      const ringPulse = sin(tutorialTimer * 2) * 0.3 + 0.7;
+      setStroke(`rgba(128, 128, 128, ${ringPulse * 0.6})`); // Gray instead of green
+      setLineWidth(3);
+      x.setLineDash([8, 8]);
+      x.beginPath();
+      x.arc(catX, catY + 50, 80, 0, TAU); // Around cat's mouth/nose area
+      x.stroke();
+      x.setLineDash([]);
+      break;
+      
+    case 1:
+      // Mana management - after first delivery
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.font = "18px serif";
+      x.fillText("Your mana is precious. Click to summon more fireflies", w / 2, h - 100);
+      x.font = "14px serif";
+      x.fillText("Each summon costs mana. Only feeding the cat restores it", w / 2, h - 75);
+      break;
+      
+    case 2:
+      // Shield mechanics - after summoning
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.font = "18px serif";
+      x.fillText("Now the cat grows restless. Hold SPACE when its eyes shift!", w / 2, h - 100);
+      x.font = "14px serif";
+      x.fillText("Perfect timing protects everything... if you're skilled enough", w / 2, h - 75);
+      break;
+      
+    case 3:
+      // Resource management warning
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.font = "18px serif";
+      x.fillText("Overuse your powers and they'll abandon you", w / 2, h - 100);
+      x.font = "14px serif";
+      x.fillText("Manage resources carefully. The night is long and unforgiving", w / 2, h - 75);
+      break;
+      
+    case 4:
+      // Final warning before full gameplay
+      setFill(`rgba(255, 255, 255, ${pulse})`);
+      x.font = "18px serif";
+      x.fillText("Now... survive until dawn. If you can", w / 2, h - 100);
+      x.font = "14px serif";
+      x.fillText("Press 'ESC' if you need reminding of the rules", w / 2, h - 75);
+      break;
+  }
+  
+  x.restore();
+};
+
+// Draw simple arrow helper
+const drawArrow = (fromX, fromY, toX, toY) => {
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const headlen = 15;
+  
+  setStroke("#ffffff");
+  setLineWidth(2);
+  
+  // Arrow line
+  x.beginPath();
+  x.moveTo(fromX, fromY);
+  x.lineTo(toX, toY);
+  x.stroke();
+  
+  // Arrow head
+  x.beginPath();
+  x.moveTo(toX, toY);
+  x.lineTo(toX - headlen * cos(angle - Math.PI / 6), toY - headlen * sin(angle - Math.PI / 6));
+  x.moveTo(toX, toY);
+  x.lineTo(toX - headlen * cos(angle + Math.PI / 6), toY - headlen * sin(angle + Math.PI / 6));
+  x.stroke();
+};
+
+// ===== UI SYSTEM =====
+
+// Draw help overlay
+const drawHelp = () => {
+  if (!showHelp) return;
+  
+  // Semi-transparent overlay
+  setFill(BLACK(0.8));
+  x.fillRect(0, 0, w, h);
+  
+  x.save();
+  
+  // Title - centered, bold, and teal glowy
+  x.textAlign = "center";
+  setFill("#9a9be9");
+  x.font = "bold 28px 'Georgia', 'Times New Roman', serif";
+  x.shadowColor = "#9a9be9";
+  x.shadowBlur = 12;
+  x.fillText("The Cat & the Luminid - Rules", w / 2, 180);
+  x.shadowBlur = 0; // Reset shadow
+  
+  // Rules text container - centered overall
+  const rulesWidth = 600;
+  const rulesX = (w - rulesWidth) / 2;
+  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  setFill("#cccccc");
+  
+  const rules = [
+    "You are the Luminid, guide of fireflies in the eternal night.",
+    "",
+    "CONTROLS:",
+    "- Move mouse to guide your luminid and collect fireflies",
+    "- Tap/hold SPACE or left mouse click to summon fireflies (costs mana)",
+    "- Hold SPACE or left mouse click to activate protective shield (costs mana)",
+    "",
+    "OBJECTIVE:",
+    "- Collect fireflies and deliver them to The Cat in the Sky",
+    "- The Cat feeds on light to sustain the night",
+    "- Survive until dawn (10 minutes) and live to see another night",
+    "- Build delivery streaks for bonus points",
+    "",
+    "DANGER:",
+    "- When The Cat's eyes begin to shift and change colors, be prepared",
+    "- PERFECT timing (white flash) protects ALL fireflies in view",
+    "- Good timing (yellow/green) saves most captured fireflies",
+    "- Even without shield, some fireflies may escape to safety",
+    "",
+    "STRATEGY:",
+    "- Manage mana wisely - summoning and shields costs magic",
+    "- Don't overheat your luminid from excessive magic use",
+    "- Master perfect shield timing for maximum protection",
+    "- Watch for The Cat's eyes - it grows restless..."
+  ];
+  
+  rules.forEach((rule, i) => {
+    const y = 230 + i * 24;
+    if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
+      // Uppercase subtitles - teal glowy, centered
+      x.textAlign = "center";
+      setFill("#69e4de");
+      x.shadowColor = "#69e4de";
+      x.shadowBlur = 10;
+      x.font = "bold 18px 'Georgia', 'Times New Roman', serif";
+      x.fillText(rule, w / 2, y);
+    } else if (rule.startsWith("- ")) {
+      // Bullet points with dashes
+      x.textAlign = "center";
+      setFill("#ffffff");
+      x.shadowColor = "#ffffff";
+      x.shadowBlur = 8;
+      x.font = "15px 'Georgia', 'Times New Roman', serif";
+      x.fillText(rule, w / 2, y);
+    } else if (rule !== "") {
+      // Regular text - centered
+      x.textAlign = "center";
+      setFill("#e0e0e0");
+      x.shadowBlur = 0;
+      x.font = "16px 'Georgia', 'Times New Roman', serif";
+      x.fillText(rule, w / 2, y);
+    }
+    x.shadowBlur = 0; // Reset shadow after each line
+  });
+  
+  // "Press or click" text - centered and teal glowy
+  x.textAlign = "center";
+  setFill("#4dd0e1");
+  x.shadowColor = "#4dd0e1";
+  x.shadowBlur = 10;
+  x.font = "bold 16px 'Georgia', 'Times New Roman', serif";
+  x.fillText("Press or click to close", w / 2, 230 + rules.length * 24 + 40);
+  x.shadowBlur = 0;
+  
+  x.restore();
+};
+
+// Draw game over screen
+const drawGameOverScreen = () => {
+  if (!gameOver) return;
+  
+  // Calculate survival time using frozen time from when game ended
+  const gameTime = gameOverTime ? (gameOverTime - (startTime || gameOverTime)) : 0;
+  const gameMinutes = Math.floor(gameTime / 60000);
+  const gameSeconds = Math.floor((gameTime % 60000) / 1000);
+  const timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
+  
+  // Calculate efficiency score (deliveries per minute, with penalty for losses)
+  const survivalMinutes = Math.max(gameTime / 60000, 0.1); // Prevent division by zero
+  const efficiencyScore = Math.floor((totalCollected * 60) / survivalMinutes);
+  const lossRate = totalLost > 0 ? Math.floor((totalLost / Math.max(totalCollected, 1)) * 100) : 0;
+  
+  // Semi-transparent overlay
+  setFill(BLACK(0.9));
+  x.fillRect(0, 0, w, h);
+  
+  x.save();
+  x.textAlign = "center";
+  
+  // Game Over title - dark red for theme
+  setFill("#cc4444");
+  x.font = "bold 48px 'Georgia', 'Times New Roman', serif";
+  x.shadowColor = "#cc4444";
+  x.shadowBlur = 15;
+  x.fillText("The Light Fades", w / 2, h / 2 - 150);
+  x.shadowBlur = 0;
+  
+  // Main stats section with proper spacing - muted colors
+  setFill("#cccccc");
+  x.font = "20px 'Georgia', 'Times New Roman', serif";
+  x.fillText("Your Journey:", w / 2, h / 2 - 100);
+  
+  // Stats with better spacing - subtle grays and muted colors
+  setFill("#aaaaaa");
+  x.font = "18px 'Georgia', 'Times New Roman', serif";
+  x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, h / 2 - 65);
+  x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, h / 2 - 40);
+  x.fillText(`Time Survived: ${timeString}`, w / 2, h / 2 - 15);
+  
+  // Best streak (only if significant)
+  if (bestStreak >= 3) {
+    x.fillText(`Best Streak: ${bestStreak}x`, w / 2, h / 2 + 10);
+  }
+  
+  // Efficiency rating
+  let efficiencyRating = "Beginner";
+  if (efficiencyScore > 60) efficiencyRating = "Expert";
+  else if (efficiencyScore > 30) efficiencyRating = "Skilled";
+  else if (efficiencyScore > 15) efficiencyRating = "Apprentice";
+  
+  setFill("#888888");
+  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.fillText(`Efficiency: ${efficiencyScore}/min (${efficiencyRating})`, w / 2, h / 2 + 35);
+  
+  // Single tip/feedback (choose most relevant)
+  setFill("#999999");
+  x.font = "14px 'Georgia', 'Times New Roman', serif";
+  if (totalLost === 0 && totalCollected > 5) {
+    x.fillText("Perfect run - no fireflies lost!", w / 2, h / 2 + 65);
+  } else if (lossRate > 50) {
+    x.fillText("Tip: Use your shield to protect fireflies", w / 2, h / 2 + 65);
+  } else if (bestStreak >= 10) {
+    x.fillText("Impressive streak mastery!", w / 2, h / 2 + 65);
+  }
+  
+  // Restart instruction - subtle but visible
+  setFill("#bbbbbb");
+  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.fillText("Click to begin another journey", w / 2, h / 2 + 100);
+  
+  x.restore();
+};
+
+// Draw main UI elements
+const drawMainUI = () => {
+  x.save();
+  x.textAlign = "left";
+  
+  let currentY = 25; // Start position for stacking elements
+  
+  // Score
+  setFill("#ffffff");
+  x.font = "18px monospace";
+  x.fillText(`Score: ${score}`, 20, currentY);
+  currentY += 25;
+  
+  // Night survival timer
+  if (startTime && !gameOver && !gameWon) {
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, NIGHT_DURATION - elapsed);
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    // Color based on time remaining
+    const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
+    setFill(timeColor);
+    x.font = "16px monospace";
+    x.fillText(`Time: ${timeText}`, 20, currentY); // Removed clock emoji
+    currentY += 22;
+  }
+  
+  // Streak display (when active)
+  if (deliveryStreak >= 2) {
+    const streakColor = deliveryStreak >= 5 ? "#ffaa00" : "#88ff88";
+    setFill(streakColor);
+    x.font = "16px monospace";
+    x.fillText(`${deliveryStreak}x streak`, 20, currentY);
+    currentY += 22;
+  }
+  
+  // Mana display (always show)
+  const manaColor = manaEnergy > 50 ? "#00ff88" : manaEnergy > 20 ? "#ffaa00" : "#ff4444";
+  setFill(manaColor);
+  x.font = "16px monospace";
+  x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, currentY);
+  currentY += 22;
+  
+  // Tutorial progression - advance to final step when mana gets low OR after enough progress OR after time
+  if (!tutorialComplete && tutorialStep === 3) {
+    tutorialStep3Timer++; // Count frames at step 3
+    if (manaEnergy <= 30 || 
+        score >= 20 || 
+        totalCollected >= 5 ||
+        tutorialStep3Timer > 900 // 15 seconds (60 fps * 15)
+    ) {
+      tutorialStep = 4; // Move to survival preparation tutorial
+    }
+  }
+  
+  // Shield status - always show
+  if (shieldActive) {
+    setFill("#00aaff");
+    x.font = "16px monospace";
+    x.fillText("SHIELD ACTIVE", 20, currentY);
+  } else if (shieldCooldown > 0) {
+    setFill("#888888");
+    x.font = "16px monospace";
+    x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, currentY);
+  } else {
+    setFill("#88ff88");
+    x.font = "16px monospace";
+    x.fillText("Shield: Ready", 20, currentY);
+  }
+  currentY += 22;
+  
+  // Overheat warning - cleaner display
+  if (summonOverheated) {
+    setFill("#ff8844");
+    x.font = "16px monospace";
+    x.fillText("Exhausted", 20, currentY);
+  } else if (summonHeat > 70) {
+    setFill("#ffaa44");
+    x.font = "16px monospace";
+    x.fillText(`Heat: ${Math.floor(summonHeat)}%`, 20, currentY);
+  }
+  
+  // Controls hint
+  x.textAlign = "right";
+  setFill("#666666");
+  x.font = "12px serif";
+  x.fillText("Press 'ESC' for help • 'M' to toggle audio", w - 20, h - 20);
+  
+  x.restore();
+};
+
+// Draw victory screen when player survives the night
+const drawVictoryScreen = () => {
+  if (!gameWon) return;
+  
+  // Calculate survival time and stats
+  const gameTime = NIGHT_DURATION;
+  const gameMinutes = Math.floor(gameTime / 60000);
+  const gameSeconds = Math.floor((gameTime % 60000) / 1000);
+  const timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
+  
+  // Calculate final score components
+  const survivalBonus = 1000; // Bonus for surviving the night
+  const perfectBonus = totalLost === 0 ? 500 : 0;
+  const streakBonus = bestStreak * 50;
+  const finalScore = score + survivalBonus + perfectBonus + streakBonus;
+  
+  // Semi-transparent overlay
+  setFill(BLACK(0.95));
+  x.fillRect(0, 0, w, h);
+  
+  x.save();
+  x.textAlign = "center";
+  
+  // Victory title with dawn colors
+  const gradient = x.createLinearGradient(0, h / 2 - 120, 0, h / 2 - 80);
+  gradient.addColorStop(0, "#ffdd00");
+  gradient.addColorStop(0.5, "#ff8844");
+  gradient.addColorStop(1, "#ffdd00");
+  x.fillStyle = gradient;
+  x.font = "bold 48px 'Georgia', 'Times New Roman', serif";
+  x.shadowColor = "#ffaa00";
+  x.shadowBlur = 20;
+  x.fillText("🌅 DAWN BREAKS! 🌅", w / 2, h / 2 - 100);
+  x.shadowBlur = 0;
+  
+  // Subtitle
+  setFill("#ffffff");
+  x.font = "24px 'Georgia', 'Times New Roman', serif";
+  x.fillText("You survived the night!", w / 2, h / 2 - 60);
+  
+  // Stats
+  setFill("#88ff88");
+  x.font = "18px 'Georgia', 'Times New Roman', serif";
+  x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, h / 2 - 20);
+  
+  setFill(totalLost === 0 ? "#88ff88" : "#ffaa66");
+  x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, h / 2 + 5);
+  
+  setFill("#88ddff");
+  x.fillText(`Best Streak: ${bestStreak}x`, w / 2, h / 2 + 30);
+  
+  // Score breakdown
+  setFill("#ffdd88");
+  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.fillText(`Base Score: ${score}`, w / 2, h / 2 + 60);
+  x.fillText(`+ Night Survival: ${survivalBonus}`, w / 2, h / 2 + 80);
+  if (perfectBonus > 0) {
+    setFill("#44ff44");
+    x.fillText(`+ PERFECT RUN: ${perfectBonus}`, w / 2, h / 2 + 100);
+  }
+  if (streakBonus > 0) {
+    setFill("#ffaa44");
+    x.fillText(`+ Streak Bonus: ${streakBonus}`, w / 2, h / 2 + (perfectBonus > 0 ? 120 : 100));
+  }
+  
+  // Final score
+  setFill("#ffffff");
+  x.font = "bold 24px 'Georgia', 'Times New Roman', serif";
+  const finalY = h / 2 + (perfectBonus > 0 ? 150 : 130) + (streakBonus > 0 ? 20 : 0);
+  x.fillText(`Final Score: ${finalScore}`, w / 2, finalY);
+  
+  // Play again instruction
+  setFill("#88ddff");
+  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.shadowColor = "#88ddff";
+  x.shadowBlur = 8;
+  x.fillText("Click to play again", w / 2, finalY + 40);
+  x.shadowBlur = 0;
+  
+  x.restore();
+};
+
+// Main game loop - orchestrates all systems
+function gameLoop() {
+  const now = Date.now();
+  
+  const { x: playerX, y: playerY } = getPlayerPosition();
+  
+  // Only update game systems when game is active (not over or won)
+  if (!gameOver && !gameWon) {
+    // Update all game systems
+    updateCatEyes(now);
+    updatePlayer(now);
+    updateFireflies(playerX, playerY);
+    updateParticles();
+    
+    // Note: Shield activation is now handled in input event handlers
+    // to properly distinguish between taps and holds
+    
+    // Check for delivery
+    if (charging) {
+      checkDeliveryZone(playerX, playerY);
+    }
+    
+    // Check for victory: surviving the night
+    if (!gameWon && !gameOver && startTime && (Date.now() - startTime >= NIGHT_DURATION)) {
+      gameWon = true;
+      addScoreText('🌅 YOU SURVIVED THE NIGHT! 🌅', w / 2, h / 2, '#ffdd00', 600);
+      playTone(800, 1.0, 0.3); // Victory sound
+    }
+    
+    // Check game over condition: 0 mana AND 0 fireflies
+    if (!gameOver && !gameWon && manaEnergy <= 0 && otherFireflies.length === 0) {
+      gameOver = true;
+      gameOverTime = Date.now(); // Capture the exact moment of game over
+      addScoreText('Game Over!', w / 2, h / 2, '#ff4444', 300);
+      playTone(200, 1.0, 0.2); // Game over sound
+    }
+    
+    // Progressive difficulty: spawn fireflies over time
+    if (!gameOver && gameStarted && startTime) {
+      const gameTime = now - startTime;
+      const minutesPlayed = gameTime / 60000;
+      
+      // Base spawn rate: every 8 seconds, faster over time
+      const baseSpawnInterval = Math.max(3000, 8000 - (minutesPlayed * 1000));
+      const spawnInterval = baseSpawnInterval / (1 + deliveryStreak * 0.1); // Streaks make it harder
+      
+      if (now - lastSpawnTime > spawnInterval && otherFireflies.length < CFG.maxFireflies) {
+        spawnFirefly();
+        lastSpawnTime = now;
+        
+        // Chance for bonus firefly at higher difficulties
+        if (minutesPlayed > 2 && r() < minutesPlayed * 0.05) {
+          spawnFirefly();
+        }
+      }
+    }
+  } // End of active game updates
+  
+  // Update score texts animation - only when game is active
+  if (!gameOver && !gameWon) {
+    scoreTexts.forEach(text => {
+      text.life++;
+      text.y -= 0.5; // Float upward
+    });
+    scoreTexts = scoreTexts.filter(text => text.life < text.maxLife);
+  }
+  
+  // Render everything in proper order
+  drawStars(now);
+  drawForest();
+  drawCatEyes(now);
+  drawDeliveryZone(now);
+  drawFireflies(now);
+  drawPlayerFirefly(playerX, playerY, now);
+  drawParticles();
+  drawScoreTexts();
+  
+  // Screen flash effect during cat eye warnings
+  if (gameStarted && !gameOver && colorChangesEnabled) {
+    const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+    const isWarning = timeUntilChange <= CFG.warnFrames;
+    
+    if (isWarning && otherFireflies.some(f => f.captured)) {
+      const warningPhase = CFG.warnFrames - timeUntilChange;
+      const shouldFlash = 
+        (warningPhase >= CFG.flash1 && warningPhase < CFG.flash1 + 20) ||
+        (warningPhase >= CFG.flash2 && warningPhase < CFG.flash2 + 20) ||
+        (warningPhase >= CFG.flash3 && warningPhase < CFG.flash3 + 20);
+      
+      if (shouldFlash) {
+        const flashIntensity = 0.15;
+        setFill(`rgba(200, 80, 80, ${flashIntensity})`);
+        x.fillRect(0, 0, w, h);
+      }
+    }
+  }
+  
+  // UI and overlays
+  drawMainUI();
+  drawTutorialGuidance();
+  drawHelp();
+  drawGameOverScreen();
+  drawVictoryScreen();
+  
+  // Periodic cleanup to prevent memory leaks
+  if (now % 5000 < 50) {
     if (particles.length > 100) particles = particles.slice(-50);
     if (clickSparkles.length > 50) clickSparkles = clickSparkles.slice(-25);
-    if (scoreTexts.length > 20) scoreTexts = scoreTexts.slice(-10);
   }
-
-  requestAnimationFrame(L);
+  
+  requestAnimationFrame(gameLoop);
 }
 
-// Initialize
-window.onresize = R;
-R();
-
-// Page visibility detection for music control
-document.addEventListener('visibilitychange', () => {
-  pageVisible = !document.hidden;
-  if (pageVisible && gameStarted && !showHelp && audioEnabled) {
-    setTimeout(startMusic, 100); // Small delay to ensure audio context is ready
-  } else {
-    stopMusic();
+// Initialize canvas and start
+const initGame = () => {
+  c = document.getElementById('c');
+  x = c.getContext('2d');
+  
+  const resize = () => {
+    w = c.width = innerWidth;
+    h = c.height = innerHeight;
+    
+    // Reinitialize systems that depend on screen size
+    initStars();
+    initCatEyes();
+  };
+  
+  window.onresize = resize;
+  resize();
+  
+  // Initialize game systems
+  startTime = Date.now();
+  runStartTime = Date.now();
+  
+  // Set first color change timing
+  nextColorChangeTime = 600 + F(r() * 300); // 10-15 seconds initially
+  
+  // Set up event listeners
+  c.addEventListener('mousemove', handleMouseMove);
+  c.addEventListener('mousedown', handleMouseDown);
+  c.addEventListener('mouseup', handleMouseUp);
+  c.addEventListener('mouseleave', () => { mouseInBounds = false; });
+  c.addEventListener('mouseenter', () => { mouseInBounds = true; });
+  
+  document.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('keyup', handleKeyUp);
+  
+  // Page visibility handling for performance
+  document.addEventListener('visibilitychange', () => {
+    pageVisible = !document.hidden;
+  });
+  
+  // Spawn initial fireflies
+  const initialFireflies = tutorialComplete ? 20 : 8;
+  for (let i = 0; i < initialFireflies; i++) {
+    spawnFirefly();
   }
-});
+  
+  // Start game loop
+  gameLoop();
+};
 
-// Start music when game begins (with user interaction)
-let firstInteraction = true;
-document.addEventListener('click', () => {
-  if (firstInteraction && audioEnabled && gameStarted && !showHelp) {
-    firstInteraction = false;
-    startMusic();
-  }
-});
-
-document.addEventListener('keydown', () => {
-  if (firstInteraction && audioEnabled && gameStarted && !showHelp) {
-    firstInteraction = false;
-    startMusic();
-  }
-});
-
-startTime = Date.now(); // Initialize game start time
-runStartTime = Date.now(); // Initialize run start time for statistics
-// Spawn initial fireflies (tutorial-aware)
-let initialFireflies = tutorialComplete ? 20 : 8;
-for (let i = 0; i < initialFireflies; i++) spawnFirefly();
-
-L();
+initGame();
