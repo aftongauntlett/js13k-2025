@@ -186,6 +186,10 @@ let clickSparkles = [];
 let stars = [];
 let catEyes = [];
 
+// Summoning feedback
+let summonFeedback = { active: false, text: "", life: 0, maxLife: 180, summonCount: 0 };
+let lastSummonTime = 0;
+
 // ===== STAR BACKGROUND SYSTEM =====
 
 // Initialize star field
@@ -831,7 +835,7 @@ const drawScoreTexts = () => {
     }
     
     setFill(text.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
-    x.font = `${fontSize}px monospace`;
+    x.font = `${fontSize}px 'Lucida Console', 'Courier New', monospace`;
     x.textAlign = "center";
     x.fillText(text.text, text.x, text.y - text.life * 0.5);
     
@@ -1142,6 +1146,26 @@ const updatePlayer = (now) => {
   
   // Update summoning heat system
   updateSummonHeat();
+  
+  // Update summoning feedback
+  if (summonFeedback.active) {
+    summonFeedback.life++;
+    
+    // Check if user stopped summoning (no summon for 500ms)
+    if (Date.now() - lastSummonTime > 500) {
+      if (summonFeedback.summonCount > 0) {
+        summonFeedback.text = `Summoned ${summonFeedback.summonCount} firefl${summonFeedback.summonCount === 1 ? 'y' : 'ies'}`;
+        summonFeedback.life = 0; // Reset life to show the final count
+        summonFeedback.maxLife = 120; // Show for 2 seconds
+        summonFeedback.summonCount = 0; // Reset count
+      }
+    }
+    
+    // Remove feedback after its lifetime
+    if (summonFeedback.life >= summonFeedback.maxLife) {
+      summonFeedback.active = false;
+    }
+  }
   
   // Update shield cooldown
   if (shieldCooldown > 0) {
@@ -1667,6 +1691,7 @@ const handleKeyDown = (e) => {
     return;
   }
   
+  // TODO: REMOVE - Testing shortcuts for development
   // Testing shortcut to trigger game over (C key)
   if (e.code === "KeyC") {
     e.preventDefault();
@@ -1675,6 +1700,15 @@ const handleKeyDown = (e) => {
       manaEnergy = 0;
       otherFireflies = []; // Remove all fireflies
     }
+    return;
+  }
+
+  // TODO: REMOVE - Testing shortcut to keep tutorial always on (T key)
+  if (e.code === "KeyT") {
+    e.preventDefault();
+    tutorialComplete = false;
+    tutorialStep = 0;
+    console.log("Tutorial mode forced on - step:", tutorialStep);
     return;
   }
   
@@ -1737,6 +1771,17 @@ const summonFirefly = () => {
   // Add heat for summoning
   summonHeat += 25;
   manaEnergy = Math.max(0, manaEnergy - 10);
+  
+  // Track summoning for feedback
+  if (!summonFeedback.active) {
+    summonFeedback.active = true;
+    summonFeedback.text = "Summoning fireflies...";
+    summonFeedback.life = 0;
+    summonFeedback.summonCount = 1;
+  } else {
+    summonFeedback.summonCount++;
+  }
+  lastSummonTime = Date.now();
   
   // Tutorial progression - advance to shield tutorial after summoning
   if (!tutorialComplete && tutorialStep === 1) {
@@ -1866,9 +1911,9 @@ const drawTutorialGuidance = () => {
     case 0:
       // First step: Collect 5 fireflies and deliver them
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "18px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Collect fireflies and lead them to The Cat in the Sky", w / 2, h - 100);
-      x.font = "14px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Move your mouse near fireflies to collect them", w / 2, h - 75);
       
       // Show delivery zone ring around cat's mouth area
@@ -1887,36 +1932,36 @@ const drawTutorialGuidance = () => {
     case 1:
       // Mana management - after first delivery
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "18px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Your mana is precious. Click to summon more fireflies", w / 2, h - 100);
-      x.font = "14px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Each summon costs mana. Only feeding the cat restores it", w / 2, h - 75);
       break;
       
     case 2:
       // Shield mechanics - after summoning
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "18px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Now the cat grows restless. Hold SPACE when its eyes shift!", w / 2, h - 100);
-      x.font = "14px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Perfect timing protects everything... if you're skilled enough", w / 2, h - 75);
       break;
       
     case 3:
       // Resource management warning
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "18px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Overuse your powers and they'll abandon you", w / 2, h - 100);
-      x.font = "14px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Manage resources carefully. The night is long and unforgiving", w / 2, h - 75);
       break;
       
     case 4:
       // Final warning before full gameplay
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "18px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Now... survive until dawn. If you can", w / 2, h - 100);
-      x.font = "14px serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText("Press 'ESC' if you need reminding of the rules", w / 2, h - 75);
       break;
   }
@@ -1962,7 +2007,7 @@ const drawHelp = () => {
   // Title - centered, bold, and teal glowy
   x.textAlign = "center";
   setFill("#9a9be9");
-  x.font = "bold 28px 'Georgia', 'Times New Roman', serif";
+  x.font = "28px 'Griffy', cursive";
   x.shadowColor = "#9a9be9";
   x.shadowBlur = 12;
   x.fillText("The Cat & the Luminid - Rules", w / 2, 180);
@@ -1971,7 +2016,7 @@ const drawHelp = () => {
   // Rules text container - centered overall
   const rulesWidth = 600;
   const rulesX = (w - rulesWidth) / 2;
-  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   setFill("#cccccc");
   
   const rules = [
@@ -2009,7 +2054,7 @@ const drawHelp = () => {
       setFill("#69e4de");
       x.shadowColor = "#69e4de";
       x.shadowBlur = 10;
-      x.font = "bold 18px 'Georgia', 'Times New Roman', serif";
+      x.font = "bold 20px 'Poiret One', sans-serif";
       x.fillText(rule, w / 2, y);
     } else if (rule.startsWith("- ")) {
       // Bullet points with dashes
@@ -2017,14 +2062,14 @@ const drawHelp = () => {
       setFill("#ffffff");
       x.shadowColor = "#ffffff";
       x.shadowBlur = 8;
-      x.font = "15px 'Georgia', 'Times New Roman', serif";
+      x.font = "15px 'Poiret One', sans-serif";
       x.fillText(rule, w / 2, y);
     } else if (rule !== "") {
       // Regular text - centered
       x.textAlign = "center";
       setFill("#e0e0e0");
       x.shadowBlur = 0;
-      x.font = "16px 'Georgia', 'Times New Roman', serif";
+      x.font = "20px 'Poiret One', sans-serif";
       x.fillText(rule, w / 2, y);
     }
     x.shadowBlur = 0; // Reset shadow after each line
@@ -2035,7 +2080,7 @@ const drawHelp = () => {
   setFill("#4dd0e1");
   x.shadowColor = "#4dd0e1";
   x.shadowBlur = 10;
-  x.font = "bold 16px 'Georgia', 'Times New Roman', serif";
+  x.font = "bold 20px 'Poiret One', sans-serif";
   x.fillText("Press or click to close", w / 2, 230 + rules.length * 24 + 40);
   x.shadowBlur = 0;
   
@@ -2066,7 +2111,7 @@ const drawGameOverScreen = () => {
   
   // Game Over title - dark red for theme
   setFill("#cc4444");
-  x.font = "bold 48px 'Georgia', 'Times New Roman', serif";
+  x.font = "48px 'Griffy', cursive";
   x.shadowColor = "#cc4444";
   x.shadowBlur = 15;
   x.fillText("The Light Fades", w / 2, h / 2 - 150);
@@ -2074,12 +2119,12 @@ const drawGameOverScreen = () => {
   
   // Main stats section with proper spacing - muted colors
   setFill("#cccccc");
-  x.font = "20px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   x.fillText("Your Journey:", w / 2, h / 2 - 100);
   
   // Stats with better spacing - subtle grays and muted colors
   setFill("#aaaaaa");
-  x.font = "18px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, h / 2 - 65);
   x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, h / 2 - 40);
   x.fillText(`Time Survived: ${timeString}`, w / 2, h / 2 - 15);
@@ -2096,12 +2141,12 @@ const drawGameOverScreen = () => {
   else if (efficiencyScore > 15) efficiencyRating = "Apprentice";
   
   setFill("#888888");
-  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   x.fillText(`Efficiency: ${efficiencyScore}/min (${efficiencyRating})`, w / 2, h / 2 + 35);
   
   // Single tip/feedback (choose most relevant)
   setFill("#999999");
-  x.font = "14px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   if (totalLost === 0 && totalCollected > 5) {
     x.fillText("Perfect run - no fireflies lost!", w / 2, h / 2 + 65);
   } else if (lossRate > 50) {
@@ -2112,26 +2157,44 @@ const drawGameOverScreen = () => {
   
   // Restart instruction - subtle but visible
   setFill("#bbbbbb");
-  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   x.fillText("Click to begin another journey", w / 2, h / 2 + 100);
   
   x.restore();
 };
 
-// Draw main UI elements
+// Draw main UI elements with improved layout
 const drawMainUI = () => {
   x.save();
+  
+  // === LEFT SIDE: Score and Streak ===
   x.textAlign = "left";
   
-  let currentY = 25; // Start position for stacking elements
+  // Score with dynamic color based on performance
+  let scoreColor;
+  if (score < 0) {
+    scoreColor = "#ff9999"; // Pastel red for negative scores
+  } else if (score < 100) {
+    scoreColor = "#e6e6e6"; // Soft white for low scores
+  } else if (score <= 200) {
+    scoreColor = "#99ff99"; // Pastel green for good scores
+  } else {
+    scoreColor = "#ffcc99"; // Pastel orange for excellent scores
+  }
   
-  // Score
-  setFill("#ffffff");
-  x.font = "18px monospace";
-  x.fillText(`Score: ${score}`, 20, currentY);
-  currentY += 25;
+  setFill(scoreColor);
+  x.font = "22px 'Poiret One', sans-serif";
+  x.fillText(`Score: ${score}`, 20, 30);
   
-  // Night survival timer
+  // Streak display (when active) - directly under score
+  if (deliveryStreak >= 2) {
+    const streakColor = deliveryStreak >= 5 ? "#ffcc99" : "#99ff99";
+    setFill(streakColor);
+    x.font = "18px 'Poiret One', sans-serif";
+    x.fillText(`${deliveryStreak}x streak`, 20, 55);
+  }
+  
+  // === TOP RIGHT: Time ===
   if (startTime && !gameOver && !gameWon) {
     const elapsed = Date.now() - startTime;
     const remaining = Math.max(0, NIGHT_DURATION - elapsed);
@@ -2142,26 +2205,58 @@ const drawMainUI = () => {
     // Color based on time remaining
     const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
     setFill(timeColor);
-    x.font = "16px monospace";
-    x.fillText(`Time: ${timeText}`, 20, currentY); // Removed clock emoji
-    currentY += 22;
+    x.textAlign = "right";
+    x.font = "22px 'Poiret One', sans-serif";
+    x.fillText(`Time: ${timeText}`, w - 20, 30);
   }
   
-  // Streak display (when active)
-  if (deliveryStreak >= 2) {
-    const streakColor = deliveryStreak >= 5 ? "#ffaa00" : "#88ff88";
-    setFill(streakColor);
-    x.font = "16px monospace";
-    x.fillText(`${deliveryStreak}x streak`, 20, currentY);
-    currentY += 22;
-  }
+  // === LEFT SIDE: Mana and Shield (with gap) ===
+  x.textAlign = "left";
+  let leftY = 100; // Gap after streak
   
   // Mana display (always show)
-  const manaColor = manaEnergy > 50 ? "#00ff88" : manaEnergy > 20 ? "#ffaa00" : "#ff4444";
+  const manaColor = manaEnergy > 50 ? "#99ffcc" : manaEnergy > 20 ? "#ffcc99" : "#ff9999";
   setFill(manaColor);
-  x.font = "16px monospace";
-  x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, currentY);
-  currentY += 22;
+  x.font = "18px 'Poiret One', sans-serif";
+  x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, leftY);
+  leftY += 25;
+  
+  // Shield status
+  if (shieldActive) {
+    setFill("#99ccff");
+    x.font = "18px 'Poiret One', sans-serif";
+    x.fillText("SHIELD ACTIVE", 20, leftY);
+  } else if (shieldCooldown > 0) {
+    setFill("#cccccc");
+    x.font = "18px 'Poiret One', sans-serif";
+    x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
+  } else {
+    setFill("#99ff99");
+    x.font = "18px 'Poiret One', sans-serif";
+    x.fillText("Shield: Ready", 20, leftY);
+  }
+  leftY += 25;
+  
+  // === CENTER: Summoning Feedback ===
+  if (summonFeedback.active) {
+    const alpha = 1 - (summonFeedback.life / summonFeedback.maxLife);
+    setFill(`rgba(255, 255, 255, ${alpha})`);
+    x.textAlign = "center";
+    x.font = "20px 'Poiret One', sans-serif";
+    x.fillText(summonFeedback.text, w / 2, h / 2 - 150);
+  }
+  
+  // === BOTTOM CENTER: Overheat/Heat Warning ===
+  x.textAlign = "center";
+  if (summonOverheated) {
+    setFill("#ff9999");
+    x.font = "18px 'Poiret One', sans-serif";
+    x.fillText("EXHAUSTED - Wait to recover", w / 2, h - 80);
+  } else if (summonHeat > 70) {
+    setFill("#ffcc99");
+    x.font = "16px 'Poiret One', sans-serif";
+    x.fillText(`Heat: ${Math.floor(summonHeat)}% - Slow down!`, w / 2, h - 80);
+  }
   
   // Tutorial progression - advance to final step when mana gets low OR after enough progress OR after time
   if (!tutorialComplete && tutorialStep === 3) {
@@ -2175,37 +2270,10 @@ const drawMainUI = () => {
     }
   }
   
-  // Shield status - always show
-  if (shieldActive) {
-    setFill("#00aaff");
-    x.font = "16px monospace";
-    x.fillText("SHIELD ACTIVE", 20, currentY);
-  } else if (shieldCooldown > 0) {
-    setFill("#888888");
-    x.font = "16px monospace";
-    x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, currentY);
-  } else {
-    setFill("#88ff88");
-    x.font = "16px monospace";
-    x.fillText("Shield: Ready", 20, currentY);
-  }
-  currentY += 22;
-  
-  // Overheat warning - cleaner display
-  if (summonOverheated) {
-    setFill("#ff8844");
-    x.font = "16px monospace";
-    x.fillText("Exhausted", 20, currentY);
-  } else if (summonHeat > 70) {
-    setFill("#ffaa44");
-    x.font = "16px monospace";
-    x.fillText(`Heat: ${Math.floor(summonHeat)}%`, 20, currentY);
-  }
-  
-  // Controls hint
+  // === BOTTOM RIGHT: Controls hint ===
   x.textAlign = "right";
   setFill("#666666");
-  x.font = "12px serif";
+  x.font = "14px 'Poiret One', sans-serif";
   x.fillText("Press 'ESC' for help • 'M' to toggle audio", w - 20, h - 20);
   
   x.restore();
@@ -2240,7 +2308,7 @@ const drawVictoryScreen = () => {
   gradient.addColorStop(0.5, "#ff8844");
   gradient.addColorStop(1, "#ffdd00");
   x.fillStyle = gradient;
-  x.font = "bold 48px 'Georgia', 'Times New Roman', serif";
+  x.font = "48px 'Griffy', cursive";
   x.shadowColor = "#ffaa00";
   x.shadowBlur = 20;
   x.fillText("🌅 DAWN BREAKS! 🌅", w / 2, h / 2 - 100);
@@ -2248,12 +2316,12 @@ const drawVictoryScreen = () => {
   
   // Subtitle
   setFill("#ffffff");
-  x.font = "24px 'Georgia', 'Times New Roman', serif";
+  x.font = "24px 'Poiret One', sans-serif";
   x.fillText("You survived the night!", w / 2, h / 2 - 60);
   
   // Stats
   setFill("#88ff88");
-  x.font = "18px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, h / 2 - 20);
   
   setFill(totalLost === 0 ? "#88ff88" : "#ffaa66");
@@ -2262,10 +2330,23 @@ const drawVictoryScreen = () => {
   setFill("#88ddff");
   x.fillText(`Best Streak: ${bestStreak}x`, w / 2, h / 2 + 30);
   
-  // Score breakdown
-  setFill("#ffdd88");
-  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  // Score breakdown with dynamic colors
+  let baseScoreColor;
+  if (score < 0) {
+    baseScoreColor = "#ff9999"; // Pastel red for negative scores
+  } else if (score < 100) {
+    baseScoreColor = "#e6e6e6"; // Soft white for low scores
+  } else if (score <= 200) {
+    baseScoreColor = "#99ff99"; // Pastel green for good scores
+  } else {
+    baseScoreColor = "#ffcc99"; // Pastel orange for excellent scores
+  }
+  
+  setFill(baseScoreColor);
+  x.font = "20px 'Poiret One', sans-serif";
   x.fillText(`Base Score: ${score}`, w / 2, h / 2 + 60);
+  
+  setFill("#ffdd88");
   x.fillText(`+ Night Survival: ${survivalBonus}`, w / 2, h / 2 + 80);
   if (perfectBonus > 0) {
     setFill("#44ff44");
@@ -2276,15 +2357,26 @@ const drawVictoryScreen = () => {
     x.fillText(`+ Streak Bonus: ${streakBonus}`, w / 2, h / 2 + (perfectBonus > 0 ? 120 : 100));
   }
   
-  // Final score
-  setFill("#ffffff");
-  x.font = "bold 24px 'Georgia', 'Times New Roman', serif";
+  // Final score with dynamic color
+  let finalScoreColor;
+  if (finalScore < 0) {
+    finalScoreColor = "#ff9999"; // Pastel red for negative scores
+  } else if (finalScore < 100) {
+    finalScoreColor = "#e6e6e6"; // Soft white for low scores
+  } else if (finalScore <= 200) {
+    finalScoreColor = "#99ff99"; // Pastel green for good scores
+  } else {
+    finalScoreColor = "#ffcc99"; // Pastel orange for excellent scores
+  }
+  
+  setFill(finalScoreColor);
+  x.font = "bold 24px 'Poiret One', sans-serif";
   const finalY = h / 2 + (perfectBonus > 0 ? 150 : 130) + (streakBonus > 0 ? 20 : 0);
   x.fillText(`Final Score: ${finalScore}`, w / 2, finalY);
   
   // Play again instruction
   setFill("#88ddff");
-  x.font = "16px 'Georgia', 'Times New Roman', serif";
+  x.font = "20px 'Poiret One', sans-serif";
   x.shadowColor = "#88ddff";
   x.shadowBlur = 8;
   x.fillText("Click to play again", w / 2, finalY + 40);
