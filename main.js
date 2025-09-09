@@ -1068,7 +1068,7 @@ const deliverFireflies = (capturedFireflies) => {
     summonOverheated = false;
   }
   
-  // Restore some mana
+  // Restore some bioluminescence
   manaEnergy = Math.min(100, manaEnergy + capturedFireflies.length * 5);
   
   // Visual feedback - simple score only
@@ -1097,7 +1097,7 @@ const deliverFireflies = (capturedFireflies) => {
     firstDeliveryMade = true;
     showTutorialElements = false; // Hide tutorial elements after first delivery
     if (!tutorialComplete && tutorialStep === 0) {
-      tutorialStep = 1; // Move to mana tutorial after first delivery
+      tutorialStep = 1; // Move to bioluminescence tutorial after first delivery
       // Spawn more fireflies for next phase
       for (let i = 0; i < 8; i++) {
         spawnFirefly();
@@ -1167,7 +1167,7 @@ const updatePlayer = (now) => {
     shieldCooldown--;
   }
   
-  // Deactivate shield if input released, mana depleted, or overheated
+  // Deactivate shield if input released, bioluminescence depleted, or overheated
   if (shieldActive) {
     const inputHeld = spacePressed || mousePressed;
     
@@ -1182,7 +1182,7 @@ const updatePlayer = (now) => {
         shieldCooldown = 60; // 1 second
       }
     } else {
-      // Drain mana while shield is active
+      // Drain bioluminescence while shield is active
       manaEnergy = Math.max(0, manaEnergy - 0.15); // Slightly faster drain
       
       // Add heat for sustained shield use (slower than summoning)
@@ -1190,7 +1190,7 @@ const updatePlayer = (now) => {
     }
   }
   
-  // Mana only regenerates when turning in fireflies - removed automatic regeneration
+  // Bioluminescence only regenerates when turning in fireflies - removed automatic regeneration
 };
 
 // Update summoning heat system
@@ -1304,18 +1304,18 @@ const drawPlayerFirefly = (playerX, playerY, now) => {
   x.arc(playerX, playerY, totalGlow, 0, TAU);
   x.fill();
   
-  // Draw mana/shield indicator around player (always show)
+  // Draw bioluminescence/shield indicator around player (always show)
   drawPlayerManaRing(playerX, playerY, now);
 };
 
-// Draw circular mana/shield indicator around player
+// Draw circular bioluminescence/shield indicator around player
 const drawPlayerManaRing = (playerX, playerY, now) => {
   const capturedCount = otherFireflies.filter(f => f.captured).length;
   const baseRadius = 18 + Math.min(capturedCount * 2, 12);
   
   x.save();
   
-  // Magical sparkle particles around the mana ring
+  // Magical sparkle particles around the bioluminescence ring
   const sparkleRadius = baseRadius + 5;
   const sparkleCount = 8;
   for (let i = 0; i < sparkleCount; i++) {
@@ -1333,7 +1333,7 @@ const drawPlayerManaRing = (playerX, playerY, now) => {
     x.shadowBlur = 0;
   }
   
-  // Mana ring with magical glow - subtle and ethereal
+  // Bioluminescence ring with magical glow - subtle and ethereal
   const manaAngle = (manaEnergy / 100) * TAU;
   
   // Soft background ring with barely visible outline
@@ -1346,7 +1346,7 @@ const drawPlayerManaRing = (playerX, playerY, now) => {
   x.stroke();
   x.shadowBlur = 0;
   
-  // Mana indicator as soft floating dots instead of solid ring
+  // Bioluminescence indicator as soft floating dots instead of solid ring
   if (manaEnergy > 0) {
     const manaColor = manaEnergy > 50 ? "#88ffaa" : manaEnergy > 20 ? "#ffcc88" : "#ffaaaa";
     const dotCount = Math.ceil((manaEnergy / 100) * 12); // 0-12 dots based on mana
@@ -1956,10 +1956,10 @@ const drawTutorialGuidance = () => {
       break;
       
     case 1:
-      // Mana management - after first delivery
+      // Bioluminescence management - after first delivery
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Your mana is precious.", w / 2, h - 100);
+      x.fillText("Your bioluminescence is precious.", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
       x.fillText("Click to summon more fireflies", w / 2, h - 75);
@@ -1969,7 +1969,7 @@ const drawTutorialGuidance = () => {
       // Shield mechanics - after summoning
       setFill(`rgba(255, 255, 255, ${pulse})`);
       x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Now the cat grows restless.", w / 2, h - 100);
+      x.fillText("Watch the cat's eyes carefully.", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
       x.fillText("Press and hold when its eyes shift!", w / 2, h - 75);
@@ -2035,10 +2035,10 @@ const drawHelp = () => {
   // Title - centered, bold, and teal glowy
   x.textAlign = "center";
   setFill("#9a9be9");
-  x.font = "28px 'Griffy', cursive";
+  x.font = "36px 'Griffy', cursive";
   x.shadowColor = "#9a9be9";
   x.shadowBlur = 12;
-  x.fillText("The Cat & the Luminid - Rules", w / 2, 180);
+  x.fillText("The Cat & the Luminid", w / 2, 180);
   x.shadowBlur = 0; // Reset shadow
   
   // Rules text container - centered overall
@@ -2052,8 +2052,8 @@ const drawHelp = () => {
     "",
     "CONTROLS:",
     "- Move mouse to guide your luminid and collect fireflies",
-    "- Tap to summon fireflies (costs mana)",
-    "- Press and hold to activate protective shield (costs mana)",
+    "- Tap to summon fireflies (costs bioluminescence)",
+    "- Press and hold to activate protective shield (costs bioluminescence)",
     "- ESC for help menu • M to toggle audio",
     "",
     "OBJECTIVE:",
@@ -2069,20 +2069,15 @@ const drawHelp = () => {
     "- Even without shield, some fireflies may escape to safety",
     "",
     "STRATEGY:",
-    "- Manage mana wisely - summoning and shields costs magic",
+    "- Manage bioluminescence wisely - summoning and shields costs magic",
     "- Don't overheat your luminid from excessive magic use",
     "- Master perfect shield timing for maximum protection",
-    "- Watch for The Cat's eyes - it grows restless...",
-    "",
-    "TESTING SHORTCUTS (DEV):",
-    "- C: Trigger game over",
-    "- T: Reset tutorial",
-    "- W: Trigger win condition"
+    "- Watch for The Cat's eyes - it grows restless..."
   ];
   
   rules.forEach((rule, i) => {
     const y = 230 + i * 24;
-    if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:" || rule === "TESTING SHORTCUTS (DEV):") {
+    if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
       // Uppercase subtitles - teal glowy, centered
       x.textAlign = "center";
       setFill("#69e4de");
@@ -2203,7 +2198,7 @@ const drawGameOverScreen = () => {
     // Victory: show score breakdown with bonuses
     setFill("#888888");
     x.font = "20px 'Poiret One', sans-serif";
-    x.fillText(`Base Score: ${score}`, w / 2, currentY);
+    x.fillText(`Base Cat's Curiosity: ${score}`, w / 2, currentY);
     currentY += 25;
     
     if (survivalBonus > 0) {
@@ -2227,7 +2222,7 @@ const drawGameOverScreen = () => {
     // Final score
     setFill("#ffffff");
     x.font = "bold 24px 'Poiret One', sans-serif";
-    x.fillText(`Final Score: ${finalScore}`, w / 2, currentY);
+    x.fillText(`Final Cat's Curiosity: ${finalScore}`, w / 2, currentY);
   } else {
     // Game over: show efficiency rating
     let efficiencyRating = "Beginner";
@@ -2280,7 +2275,7 @@ const drawMainUI = () => {
   
   setFill(scoreColor);
   x.font = "22px 'Poiret One', sans-serif";
-  x.fillText(`Score: ${score}`, 20, 30);
+  x.fillText(`Cat's Curiosity: ${score}`, 20, 30);
   
   // Streak display (when active) - directly under score
   if (deliveryStreak >= 2) {
@@ -2303,18 +2298,18 @@ const drawMainUI = () => {
     setFill(timeColor);
     x.textAlign = "right";
     x.font = "22px 'Poiret One', sans-serif";
-    x.fillText(`Time: ${timeText}`, w - 20, 30);
+    x.fillText(`Time Until Sunrise: ${timeText}`, w - 20, 30);
   }
   
-  // === LEFT SIDE: Mana and Shield (with gap) ===
+  // === LEFT SIDE: Bioluminescence and Shield (with gap) ===
   x.textAlign = "left";
   let leftY = 100; // Gap after streak
   
-  // Mana display (always show)
+  // Bioluminescence display (always show)
   const manaColor = manaEnergy > 50 ? "#99ffcc" : manaEnergy > 20 ? "#ffcc99" : "#ff9999";
   setFill(manaColor);
   x.font = "18px 'Poiret One', sans-serif";
-  x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, leftY);
+  x.fillText(`Bioluminescence: ${Math.floor(manaEnergy)}`, 20, leftY);
   leftY += 25;
   
   // Shield status
@@ -2388,6 +2383,11 @@ const drawMainUI = () => {
   setFill("#666666");
   x.font = "14px 'Poiret One', sans-serif";
   x.fillText("Press 'ESC' for help • 'M' to toggle audio", w - 20, h - 20);
+  
+  // Testing shortcuts (always visible for development)
+  setFill("#555555");
+  x.font = "12px 'Poiret One', sans-serif";
+  x.fillText("DEV: C-GameOver • T-Tutorial • W-Win", w - 20, h - 40);
   
   x.restore();
 };
@@ -2495,6 +2495,12 @@ function gameLoop() {
   drawTutorialGuidance();
   drawHelp();
   drawGameOverScreen();
+  
+  // Draw cursor firefly on top of overlays when they're active
+  const overlaysActive = showHelp || gameOver || gameWon;
+  if (overlaysActive && mouseInBounds) {
+    drawPlayerFirefly(mx, my, now);
+  }
   
   // Periodic cleanup to prevent memory leaks
   if (now % 5000 < 50) {
