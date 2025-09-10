@@ -953,7 +953,7 @@ const spawnFirefly = () => {
   
   otherFireflies.push({
     x: r() * w,
-    y: h * 0.3 + r() * h * 0.5, // Keep in lower 2/3 of screen
+    y: h * 0.65 + r() * h * 0.33, // From just below skyline to bottom (65% to 98% of screen)
     captured: false,
     captureOffset: { x: 0, y: 0 },
     floatTimer: r() * TAU,
@@ -1035,7 +1035,7 @@ const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
     // Set new roaming destination
     firefly.roamTarget = {
       x: r() * w,
-      y: h * 0.35 + r() * h * 0.5, // Stay in grass area
+      y: h * 0.65 + r() * h * 0.33, // From just below skyline to bottom
     };
   }
   
@@ -1056,7 +1056,7 @@ const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
   
   // Keep fireflies in bounds
   firefly.x = clamp(firefly.x, 20, w - 20);
-  firefly.y = clamp(firefly.y, h * 0.3, h - 20);
+  firefly.y = clamp(firefly.y, h * 0.65, h - 20); // From just below skyline to bottom
 };
 
 // Capture a firefly
@@ -1957,7 +1957,7 @@ const summonFirefly = () => {
   
   otherFireflies.push({
     x: clamp(spawnX, 50, w - 50),
-    y: clamp(spawnY, h * 0.3, h - 50),
+    y: clamp(spawnY, h * 0.65, h - 50), // From just below skyline to bottom
     captured: false,
     captureOffset: { x: 0, y: 0 },
     floatTimer: r() * TAU,
