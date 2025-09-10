@@ -210,15 +210,78 @@ let lastSummonTime = 0;
 // Initialize star field
 const initStars = () => {
   stars = [];
-  for (let i = 0; i < 150; i++) {
+  
+  // Regular stars (fewer, smaller)
+  for (let i = 0; i < 100; i++) {
+    const starType = r(); // Random number to determine star behavior
+    let twinkleSpeed, baseAlpha;
+    
+    if (starType < 0.3) {
+      // 30% - Static bright stars (no twinkling)
+      twinkleSpeed = 0;
+      baseAlpha = r() * 0.4 + 0.6; // Bright and steady
+    } else if (starType < 0.6) {
+      // 30% - Slow fade in/out stars
+      twinkleSpeed = r() * 0.005 + 0.002; // Very slow
+      baseAlpha = r() * 0.6 + 0.3;
+    } else {
+      // 40% - Normal twinkling stars
+      twinkleSpeed = r() * 0.01 + 0.005; // Slower than before
+      baseAlpha = r() * 0.5 + 0.3;
+    }
+    
     stars.push({
       x: r() * w,
       y: r() * h,
-      size: r() * 2 + 0.5,
-      alpha: r() * 0.8 + 0.2,
-      twinkleSpeed: r() * 0.02 + 0.01,
+      size: r() * 1.2 + 0.3, // Smaller than before (was 2 + 0.5)
+      alpha: baseAlpha,
+      twinkleSpeed: twinkleSpeed,
       twinkleOffset: r() * TAU,
+      type: 'regular'
     });
+  }
+  
+  // Add tiny dust particles
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: r() * w,
+      y: r() * h,
+      size: r() * 0.3 + 0.1, // Very small
+      alpha: r() * 0.3 + 0.1, // Dim
+      twinkleSpeed: r() * 0.003 + 0.001, // Very slow twinkle
+      twinkleOffset: r() * TAU,
+      type: 'dust'
+    });
+  }
+  
+  // Create milky way band - diagonal across sky
+  const milkyWayStars = 80;
+  const centerX = w * 0.7; // Off-center
+  const centerY = h * 0.3; 
+  const bandWidth = w * 0.6;
+  const bandHeight = h * 0.4;
+  
+  for (let i = 0; i < milkyWayStars; i++) {
+    // Create elliptical distribution for milky way
+    const angle = r() * TAU;
+    const radiusX = (r() * 0.8 + 0.2) * bandWidth / 2;
+    const radiusY = (r() * 0.6 + 0.2) * bandHeight / 2;
+    
+    const starX = centerX + cos(angle) * radiusX;
+    const starY = centerY + sin(angle) * radiusY;
+    
+    // Only add if within screen bounds
+    if (starX >= 0 && starX <= w && starY >= 0 && starY <= h) {
+      stars.push({
+        x: starX,
+        y: starY,
+        size: r() * 0.4 + 0.1, // Tiny milky way dust
+        alpha: r() * 0.4 + 0.1, // Dim
+        twinkleSpeed: r() * 0.002 + 0.0005, // Very subtle movement
+        twinkleOffset: r() * TAU,
+        type: 'milkyway'
+      });
+    }
   }
 };
 
@@ -228,9 +291,16 @@ const drawStars = (now) => {
   x.fillRect(0, 0, w, h);
   
   stars.forEach(star => {
-    // Gentle twinkling animation
-    const twinkle = sin(now * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
-    const alpha = star.alpha * twinkle;
+    let alpha;
+    
+    if (star.twinkleSpeed === 0) {
+      // Static stars - no animation
+      alpha = star.alpha;
+    } else {
+      // Animated stars - gentle twinkling or slow fading
+      const twinkle = sin(now * star.twinkleSpeed + star.twinkleOffset) * 0.4 + 0.6;
+      alpha = star.alpha * twinkle;
+    }
     
     setFill(`rgba(255, 255, 255, ${alpha})`);
     x.beginPath();
@@ -317,7 +387,7 @@ const drawTree = (x_pos, y_pos, width, height) => {
 // Whisker constants from original
 const WHISKERS = [
   { len: 110, yOff: 45, spread: -25 }, // top
-  { len: 120, yOff: 55, spread: 0 },   // middle (longest)
+  { len: 140, yOff: 55, spread: 0 },   // middle (longer than others)
   { len: 110, yOff: 65, spread: 25 }   // bottom
 ];
 
@@ -361,21 +431,31 @@ const drawWhiskers = (dir, eyeX, eyeY, twitch, now) => {
   for (let i = 0; i < WHISKERS.length; i++) {
     const w = WHISKERS[i];
     const sy = eyeY + w.yOff;
+    
+    // Add natural downward curve for realistic whisker shape
+    const isMiddleWhisker = i === 1;
+    const curveAmount = isMiddleWhisker ? 15 : 8; // More curve for middle whiskers
     const ex = baseX + dir * w.len;
-    const ey = sy + w.spread + twitch;
+    const ey = sy + w.spread + twitch + curveAmount; // Downward curve
 
-    // Main whisker line
+    // Draw whisker with curve using quadratic curve
     x.beginPath();
     x.moveTo(baseX, sy);
-    x.lineTo(ex, ey);
+    // Control point for natural whisker curve
+    const controlX = baseX + dir * (w.len * 0.7);
+    const controlY = sy + (w.spread + twitch) * 0.5;
+    x.quadraticCurveTo(controlX, controlY, ex, ey);
     x.stroke();
 
     // Stars: 2 on middle whisker, 1 on others
     const starCount = i === 1 ? 2 : 1;
     for (let s = 0; s < starCount; s++) {
       const pos = starCount === 2 ? (s + 1) / 3 : 0.6;
-      const sx = baseX + dir * (w.len * pos);
-      const sy2 = sy + w.spread * pos;
+      
+      // Position stars along the curved whisker path
+      const t = pos;
+      const sx = baseX + dir * (w.len * t);
+      const sy2 = sy + (w.spread + twitch + curveAmount) * t * 0.7; // Follow curve
 
       // Enhanced twinkle formula with proximity responsiveness
       let tw = sin(now * 0.002 + s * 2.2 + i * 3.1) * 0.5 + 0.5; // Faster base twinkle
@@ -403,6 +483,86 @@ const drawWhiskers = (dir, eyeX, eyeY, twitch, now) => {
       }
     }
   }
+};
+
+// Draw mystical grin outline using twinkling stars
+const drawMysticalGrin = (eyeX, eyeY, now, mouseInSky, catProximity) => {
+  const grinCenterX = eyeX;
+  const grinCenterY = eyeY + 85; // Moved up toward nose
+  
+  // Create the ":3" cat mouth - two curves that angle INWARD toward center
+  const starsPerSide = 6; // Fewer stars for cleaner look
+  const sideWidth = 70; // Width of each side curve
+  const curveHeight = 18; // How much each curve rises toward center
+  const separation = 20; // Gap between the two curves at center
+  
+  // Base brightness - dim by default, bright on sky hover
+  const baseAlpha = mouseInSky ? 0.6 : 0.2; // Dimmer when not hovered
+  const hoverBoost = mouseInSky ? catProximity * 0.4 : 0; // Extra brightness on proximity
+  
+  // LEFT side of the ":3" mouth - curves inward (downward and rightward)
+  for (let i = 0; i < starsPerSide; i++) {
+    const t = i / (starsPerSide - 1); // 0 to 1
+    const starX = grinCenterX - separation - t * sideWidth; // Start from center, go left
+    
+    // Curve that goes DOWN and INWARD - like the left side of a heart bottom
+    const curveAmount = sin(t * Math.PI) * curveHeight; // Sine gives smooth curve
+    const starY = grinCenterY + curveAmount; // Add to go downward
+    
+    // Random twinkling timing for each star - slower when not hovered
+    const twinkleSpeed = mouseInSky ? 0.006 : 0.002; // Faster sparkle on hover
+    const starPhase = now * twinkleSpeed + i * 1.3; // Faster, more random
+    const twinkle = sin(starPhase) * 0.5 + 0.5;
+    const alpha = baseAlpha + (twinkle * 0.3) + hoverBoost;
+    const starSize = 1.0 + (twinkle * 0.4) + (hoverBoost * 0.5);
+    
+    x.shadowColor = `rgba(255, 255, 255, ${alpha * 0.9})`;
+    x.shadowBlur = starSize * 3;
+    setFill(`rgba(255, 255, 255, ${alpha})`);
+    x.beginPath();
+    x.arc(starX, starY, starSize, 0, TAU);
+    x.fill();
+    x.shadowBlur = 0;
+  }
+  
+  // RIGHT side of the ":3" mouth - curves inward (downward and leftward)  
+  for (let i = 0; i < starsPerSide; i++) {
+    const t = i / (starsPerSide - 1); // 0 to 1
+    const starX = grinCenterX + separation + t * sideWidth; // Start from center, go right
+    
+    // Same curve but mirrored - goes DOWN and INWARD
+    const curveAmount = sin(t * Math.PI) * curveHeight;
+    const starY = grinCenterY + curveAmount; // Add to go downward
+    
+    // Different random timing for right side
+    const twinkleSpeed = mouseInSky ? 0.006 : 0.002; // Faster sparkle on hover
+    const starPhase = now * twinkleSpeed + (i + starsPerSide) * 0.9; // Different offset
+    const twinkle = sin(starPhase) * 0.5 + 0.5;
+    const alpha = baseAlpha + (twinkle * 0.3) + hoverBoost;
+    const starSize = 1.0 + (twinkle * 0.4) + (hoverBoost * 0.5);
+    
+    x.shadowColor = `rgba(255, 255, 255, ${alpha * 0.9})`;
+    x.shadowBlur = starSize * 3;
+    setFill(`rgba(255, 255, 255, ${alpha})`);
+    x.beginPath();
+    x.arc(starX, starY, starSize, 0, TAU);
+    x.fill();
+    x.shadowBlur = 0;
+  }
+  
+  // Single center point where both curves meet
+  const twinkleSpeed = mouseInSky ? 0.005 : 0.002;
+  const centerPhase = now * twinkleSpeed + 2.7; // Different timing
+  const centerTwinkle = sin(centerPhase) * 0.5 + 0.5;
+  const centerAlpha = baseAlpha + (centerTwinkle * 0.3) + hoverBoost;
+  
+  x.shadowColor = `rgba(255, 255, 255, ${centerAlpha * 0.8})`;
+  x.shadowBlur = 4;
+  setFill(`rgba(255, 255, 255, ${centerAlpha})`);
+  x.beginPath();
+  x.arc(grinCenterX, grinCenterY + curveHeight * 0.7, 0.8 + centerTwinkle * 0.3 + hoverBoost * 0.3, 0, TAU);
+  x.fill();
+  x.shadowBlur = 0;
 };
 
 // Draw the complete cat face with eyes, nose, and whiskers
@@ -448,11 +608,19 @@ const drawCatEyes = (now) => {
   const mouseDistX = mx - eyeX;
   const mouseDistY = my - eyeY;
   
-  // Calculate pupil dilation first for bounds checking
+  // Calculate pupil dilation based on distance to nose
   const basePupilWidth = 4;
   const maxPupilWidth = 12;
-  const curiosityFactor = Math.min(score / 100, 1);
-  const pupilWidth = basePupilWidth + (maxPupilWidth - basePupilWidth) * curiosityFactor;
+  
+  // Use existing nose coordinates and calculate distance
+  const distanceToNose = Math.sqrt((mx - noseX) * (mx - noseX) + (my - noseY) * (my - noseY));
+  
+  // Maximum distance for dilation effect (when pupils should be smallest)
+  const maxDistance = 200; // Adjust this to control the proximity range
+  
+  // Invert the distance - closer to nose = larger pupils
+  const proximityFactor = Math.max(0, 1 - (distanceToNose / maxDistance));
+  const pupilWidth = basePupilWidth + (maxPupilWidth - basePupilWidth) * proximityFactor;
   
   // Reduce max movement based on eye size and pupil width to prevent overlap
   // Eye is 85x28, so we need to account for pupil size and eye rotation
@@ -578,11 +746,10 @@ const drawCatEyes = (now) => {
   const whiskerAlpha = 0.3 + (whiskerBreathing * 0.5) + proximityEffect;
   const whiskerGlow = (whiskerBreathing * 12) + (catProximity * 25); // More glow
   
-  // Enhanced twitch effect when mouse is near - more cat-like movement
-  const baseTwitch = sin(now * 0.015) * 2; // Base gentle movement
-  const proximityTwitch = mouseNearCat ? sin(now * 0.025) * catProximity * 8 : 0; // More pronounced
-  const randomTwitch = mouseNearCat ? sin(now * 0.04 + 2.3) * catProximity * 4 : 0; // Added randomness
-  const whiskerTwitch = baseTwitch + proximityTwitch + randomTwitch;
+  // Only twitch when mouse is in sky area (above skyline at h * 0.65)
+  const mouseInSky = my < h * 0.65;
+  const skyTwitch = mouseInSky && mouseNearCat ? sin(now * 0.02) * catProximity * 3 : 0; // Subtle sky twitch
+  const whiskerTwitch = skyTwitch; // Remove base constant twitching
   
   // Batch canvas state for whiskers
   setStroke(`rgba(255, 255, 255, ${Math.min(1, whiskerAlpha)})`);
@@ -602,6 +769,9 @@ const drawCatEyes = (now) => {
   // Reset shadow effects and alpha
   x.shadowBlur = 0;
   x.globalAlpha = 1;
+  
+  // Draw mystical grin outline - testing mode (always visible)
+  drawMysticalGrin(eyeX, eyeY, now, mouseInSky, catProximity);
 };
 
 // Update cat eye color changes and warnings
