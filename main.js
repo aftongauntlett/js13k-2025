@@ -131,6 +131,17 @@ const handleShieldAudio = (isHoldAction = false) => {
 // Canvas and rendering
 let c, x, w, h;
 
+// Responsive design
+let isScreenTooSmall = false;
+const MIN_WIDTH = 900;  
+const MIN_HEIGHT = 600; 
+
+// Mobile/touch device detection
+const isMobileDevice = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+         (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+};
+
 // Mouse state
 let mx = 0, my = 0, lastMx = 0, lastMy = 0;
 let mousePressed = false, mouseDownTime = 0;
@@ -1699,6 +1710,9 @@ const createSummonEffect = (x, y) => {
 
 // Mouse movement handler
 const handleMouseMove = (e) => {
+  // Don't process input when screen is too small
+  if (isScreenTooSmall) return;
+  
   lastMx = mx;
   lastMy = my;
   mx = e.clientX;
@@ -1715,6 +1729,9 @@ const handleMouseMove = (e) => {
 
 // Mouse down handler
 const handleMouseDown = (e) => {
+  // Don't process input when screen is too small
+  if (isScreenTooSmall) return;
+  
   if (showHelp) {
     showHelp = false;
     return;
@@ -1746,6 +1763,9 @@ const handleMouseDown = (e) => {
 
 // Mouse up handler  
 const handleMouseUp = (e) => {
+  // Don't process input when screen is too small
+  if (isScreenTooSmall) return;
+  
   if (!gameStarted || gameOver) return;
   
   const holdDuration = Date.now() - mouseDownTime;
@@ -1775,6 +1795,16 @@ const handleMouseUp = (e) => {
 
 // Keyboard handler
 const handleKeyDown = (e) => {
+  // Allow some keys even when screen is too small
+  if (isScreenTooSmall) {
+    // Only allow audio toggle and help when screen is too small
+    if (e.code === "KeyM") {
+      e.preventDefault();
+      audioEnabled = !audioEnabled;
+    }
+    return;
+  }
+  
   // Close help menu if open (any key)
   if (showHelp) {
     e.preventDefault();
@@ -1861,6 +1891,9 @@ const handleKeyDown = (e) => {
 
 // Handle key releases
 const handleKeyUp = (e) => {
+  // Don't process input when screen is too small
+  if (isScreenTooSmall) return;
+  
   if (e.code === "Space") {
     const holdDuration = Date.now() - spaceActivationTime;
     
@@ -2161,6 +2194,73 @@ const drawArrow = (fromX, fromY, toX, toY) => {
   x.moveTo(toX, toY);
   x.lineTo(toX - headlen * cos(angle + Math.PI / 6), toY - headlen * sin(angle + Math.PI / 6));
   x.stroke();
+};
+
+// ===== RESPONSIVE DESIGN SYSTEM =====
+
+// Draw screen size warning for mobile/small screens
+const drawScreenSizeWarning = () => {
+  if (!isScreenTooSmall) return;
+  
+  // Full screen overlay
+  setFill(BLACK(0.95));
+  x.fillRect(0, 0, w, h);
+  
+  x.save();
+  x.textAlign = "center";
+  
+  const centerX = w / 2;
+  const centerY = h / 2;
+  
+  // Title with glow effect
+  setFill("#9a9be9");
+  x.font = "32px 'Griffy', cursive";
+  x.shadowColor = "#9a9be9";
+  x.shadowBlur = 15;
+  x.fillText("The Cat & the Luminid", centerX, centerY - 120);
+  x.shadowBlur = 0;
+  
+  // Main message
+  setFill("#ffffff");
+  x.font = "24px 'Poiret One', sans-serif";
+  
+  if (isMobileDevice()) {
+    x.fillText("This mystical experience requires", centerX, centerY - 60);
+    x.fillText("a desktop or laptop computer", centerX, centerY - 30);
+  } else {
+    x.fillText("Please resize your browser window", centerX, centerY - 60);
+    x.fillText("to enjoy the full experience", centerX, centerY - 30);
+  }
+  
+  // Requirements
+  setFill("#cccccc");
+  x.font = "18px 'Poiret One', sans-serif";
+  if (!isMobileDevice()) {
+    x.fillText(`Minimum: ${MIN_WIDTH} × ${MIN_HEIGHT} pixels`, centerX, centerY + 20);
+    
+    // Current size info
+    setFill("#999999");
+    x.font = "16px 'Poiret One', sans-serif";
+    x.fillText(`Current: ${w} × ${h} pixels`, centerX, centerY + 50);
+  }
+  
+  // Instructions
+  setFill("#69e4de");
+  x.font = "20px 'Poiret One', sans-serif";
+  x.shadowColor = "#69e4de";
+  x.shadowBlur = 8;
+  
+  if (isMobileDevice()) {
+    x.fillText("Please use a desktop or laptop computer", centerX, centerY + 100);
+    x.fillText("for the optimal luminid experience", centerX, centerY + 130);
+  } else {
+    x.fillText("Try maximizing your browser window", centerX, centerY + 100);
+    x.fillText("or adjusting your zoom level", centerX, centerY + 130);
+  }
+  
+  x.shadowBlur = 0;
+  
+  x.restore();
 };
 
 // ===== UI SYSTEM =====
@@ -2580,8 +2680,8 @@ function gameLoop() {
   
   const { x: playerX, y: playerY } = getPlayerPosition();
   
-  // Only update game systems when game is active (not over or won)
-  if (!gameOver && !gameWon) {
+  // Only update game systems when game is active (not over or won) AND screen is adequate
+  if (!gameOver && !gameWon && !isScreenTooSmall) {
     // Update all game systems
     updateCatEyes(now);
     updatePlayer(now);
@@ -2645,8 +2745,8 @@ function gameLoop() {
     }
   } // End of active game updates
   
-  // Update score texts animation - only when game is active
-  if (!gameOver && !gameWon) {
+  // Update score texts animation - only when game is active AND screen is adequate
+  if (!gameOver && !gameWon && !isScreenTooSmall) {
     scoreTexts.forEach(text => {
       text.life++;
       text.y -= 0.5; // Float upward
@@ -2697,6 +2797,9 @@ function gameLoop() {
     drawPlayerFirefly(mx, my, now);
   }
   
+  // Show screen size warning LAST - covers everything
+  drawScreenSizeWarning();
+  
   // Periodic cleanup to prevent memory leaks
   if (now % 5000 < 50) {
     if (particles.length > 100) particles = particles.slice(-50);
@@ -2715,9 +2818,22 @@ const initGame = () => {
     w = c.width = innerWidth;
     h = c.height = innerHeight;
     
-    // Reinitialize systems that depend on screen size
-    initStars();
-    initCatEyes();
+    // Check if screen is too small for proper gameplay
+    const wasTooSmall = isScreenTooSmall;
+    isScreenTooSmall = (w < MIN_WIDTH || h < MIN_HEIGHT) || isMobileDevice();
+    
+    // If size changed, update systems accordingly
+    if (wasTooSmall !== isScreenTooSmall) {
+      if (!isScreenTooSmall) {
+        // Screen became large enough - reinitialize systems
+        initStars();
+        initCatEyes();
+      }
+    } else if (!isScreenTooSmall) {
+      // Screen is large enough and size changed - update systems
+      initStars();
+      initCatEyes();
+    }
   };
   
   window.onresize = resize;
