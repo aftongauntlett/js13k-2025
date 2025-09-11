@@ -309,7 +309,192 @@ const drawStars = (now) => {
   });
 };
 
-// ===== FOREST BACKGROUND SYSTEM =====
+// ===== FOREST & VINE BACKGROUND SYSTEM =====
+
+// Vine silhouette system with parallax layers
+let vineShapes = [];
+
+// Initialize Tim Burton-style twisted vine system
+const initVines = () => {
+  vineShapes = [];
+  
+  // Left corner twisted vine - growing from bottom left
+  vineShapes.push({
+    type: 'leftCorner',
+    depth: 1.0,
+    segments: createTwistedVinePath('left')
+  });
+  
+  // Right corner twisted vine - growing from bottom right
+  vineShapes.push({
+    type: 'rightCorner',
+    depth: 1.0,
+    segments: createTwistedVinePath('right')
+  });
+  
+  // Bottom center vine - growing upward
+  vineShapes.push({
+    type: 'bottomCenter',
+    depth: 0.8,
+    segments: createTwistedVinePath('bottom')
+  });
+  
+  // Background parallax vines - smaller and lighter
+  vineShapes.push({
+    type: 'leftBackground',
+    depth: 0.6,
+    segments: createTwistedVinePath('leftSmall')
+  });
+  
+  vineShapes.push({
+    type: 'rightBackground',
+    depth: 0.6,
+    segments: createTwistedVinePath('rightSmall')
+  });
+  
+  vineShapes.push({
+    type: 'bottomBackground1',
+    depth: 0.5,
+    segments: createTwistedVinePath('bottomSmall1')
+  });
+  
+  vineShapes.push({
+    type: 'bottomBackground2',
+    depth: 0.5,
+    segments: createTwistedVinePath('bottomSmall2')
+  });
+};
+
+// Create curved vine paths with Burton-style twists and thorns
+const createTwistedVinePath = (direction) => {
+  const segments = [];
+  const segmentCount = 25;
+  
+  for (let i = 0; i < segmentCount; i++) {
+    const t = i / (segmentCount - 1);
+    
+    let x, y, thickness, thorns = [];
+    
+    if (direction === 'left') {
+      // Left vine: starts at bottom-left, curves up and inward with spirals - WIDER
+      const baseX = t * w * 0.2;
+      const baseY = h * 0.95 - (t * h * 0.5);
+      
+      const spiral = sin(t * Math.PI * 4) * (w * 0.08) * (1 - t * 0.5);
+      const coil = cos(t * Math.PI * 6) * (w * 0.04) * (1 - t * 0.7);
+      
+      x = w * 0.02 + baseX + spiral;
+      y = baseY + coil;
+      thickness = (1 - t * 0.8) * 10;
+      
+      // Add thorns every few segments
+      if (i % 2 === 0) {
+        thorns = [
+          { angle: t * 3 + 1, length: 8 + t * 6 },
+          { angle: t * 3 + 4, length: 6 + t * 4 }
+        ];
+      }
+      
+    } else if (direction === 'right') {
+      // Right vine: mirror of left vine - WIDER
+      const baseX = t * w * 0.2;
+      const baseY = h * 0.95 - (t * h * 0.5);
+      
+      const spiral = sin(t * Math.PI * 4) * (w * 0.08) * (1 - t * 0.5);
+      const coil = cos(t * Math.PI * 6) * (w * 0.04) * (1 - t * 0.7);
+      
+      x = w * 0.98 - baseX - spiral;
+      y = baseY + coil;
+      thickness = (1 - t * 0.8) * 10;
+      
+      // Add thorns every few segments
+      if (i % 2 === 0) {
+        thorns = [
+          { angle: t * 3 + 2, length: 8 + t * 6 },
+          { angle: t * 3 + 5, length: 6 + t * 4 }
+        ];
+      }
+      
+    } else if (direction === 'leftSmall') {
+      // Smaller background left vine for parallax
+      const baseX = t * w * 0.12;
+      const baseY = h * 0.9 - (t * h * 0.3);
+      
+      const spiral = sin(t * Math.PI * 3) * (w * 0.04) * (1 - t * 0.6);
+      const coil = cos(t * Math.PI * 4) * (w * 0.02) * (1 - t * 0.8);
+      
+      x = w * 0.1 + baseX + spiral;
+      y = baseY + coil;
+      thickness = (1 - t * 0.9) * 6;
+      
+      // Fewer, smaller thorns
+      if (i % 3 === 0) {
+        thorns = [{ angle: t * 2 + 1, length: 4 + t * 3 }];
+      }
+      
+    } else if (direction === 'rightSmall') {
+      // Smaller background right vine for parallax
+      const baseX = t * w * 0.12;
+      const baseY = h * 0.9 - (t * h * 0.3);
+      
+      const spiral = sin(t * Math.PI * 3) * (w * 0.04) * (1 - t * 0.6);
+      const coil = cos(t * Math.PI * 4) * (w * 0.02) * (1 - t * 0.8);
+      
+      x = w * 0.9 - baseX - spiral;
+      y = baseY + coil;
+      thickness = (1 - t * 0.9) * 6;
+      
+      // Fewer, smaller thorns
+      if (i % 3 === 0) {
+        thorns = [{ angle: t * 2 + 2, length: 4 + t * 3 }];
+      }
+      
+    } else if (direction === 'bottomSmall1' || direction === 'bottomSmall2') {
+      // Small background briar patches
+      const isSecond = direction === 'bottomSmall2';
+      const centerX = isSecond ? w * 0.75 : w * 0.25;
+      const spread = (t - 0.5) * w * 0.15;
+      const baseY = t * h * 0.08;
+      
+      const wave1 = sin(t * Math.PI * 6) * (h * 0.02);
+      const wave2 = cos(t * Math.PI * 2) * (h * 0.015);
+      
+      x = centerX + spread;
+      y = h - baseY + wave1 + wave2;
+      thickness = (1 - t * 0.8) * 4;
+      
+      // Small briar thorns
+      if (i % 2 === 0) {
+        thorns = [{ angle: t * 4, length: 3 + t * 2 }];
+      }
+      
+    } else { // bottom - main briar
+      // Bottom briar: spreads horizontally along bottom like thorny undergrowth
+      const spread = (t - 0.5) * w * 0.6;
+      const baseY = t * h * 0.15;
+      
+      const wave1 = sin(t * Math.PI * 8) * (h * 0.03);
+      const wave2 = cos(t * Math.PI * 3) * (h * 0.02);
+      const thornyness = sin(t * Math.PI * 12) * (h * 0.01);
+      
+      x = w * 0.5 + spread;
+      y = h - baseY + wave1 + wave2 + thornyness;
+      thickness = (1 - t * 0.7) * 8;
+      
+      // Dense thorns for main briar
+      if (i % 2 === 0) {
+        thorns = [
+          { angle: t * 4 + 1.5, length: 6 + t * 4 },
+          { angle: t * 4 + 4.5, length: 5 + t * 3 }
+        ];
+      }
+    }
+    
+    segments.push({ x, y, thickness, thorns });
+  }
+  
+  return segments;
+};
 
 // Draw atmospheric forest silhouettes
 const drawForest = () => {
@@ -359,6 +544,103 @@ const drawForest = () => {
   x.lineTo(0, h);
   x.closePath();
   x.fill();
+  
+  // Draw background vines (furthest parallax layer)
+  drawVineSilhouettes('background');
+};
+
+// Draw elegant vine silhouettes with Burton-style curves
+const drawVineSilhouettes = (layer, now = performance.now()) => {
+  if (!vineShapes.length) return;
+  
+  const vinesToDraw = vineShapes.filter(vine => 
+    layer === 'all' || 
+    (layer === 'background' && vine.depth < 0.9) ||
+    (layer === 'foreground' && vine.depth >= 0.9)
+  );
+  
+  vinesToDraw.forEach((vine, index) => {
+    if (!vine.segments || vine.segments.length < 2) return;
+    
+    // Very subtle breathing animation
+    const breathe = sin(now * 0.001 + index * 0.3) * 1.5;
+    
+    // Color based on depth for parallax effect - darker background vines
+    let vineColor;
+    if (vine.depth >= 1.0) {
+      vineColor = "#000000"; // Pure black for foreground
+    } else if (vine.depth >= 0.8) {
+      vineColor = "#050505"; // Very dark for mid-ground
+    } else if (vine.depth >= 0.6) {
+      vineColor = "#0a0a0a"; // Darker for background parallax
+    } else {
+      vineColor = "#101010"; // Darkest for far background
+    }
+    
+    setFill(vineColor);
+    setStroke(vineColor);
+    
+    vine.segments.forEach((segment, i) => {
+      const breatheEffect = breathe * (1 - i / vine.segments.length) * 0.5;
+      const x_pos = segment.x + breatheEffect;
+      const y_pos = segment.y;
+      const radius = Math.max(0.5, segment.thickness);
+      
+      // Draw overlapping circles to create smooth vine body
+      x.beginPath();
+      x.arc(x_pos, y_pos, radius, 0, TAU);
+      x.fill();
+      
+      // Connect segments with lines for seamless vine
+      if (i > 0) {
+        const prevSegment = vine.segments[i - 1];
+        const prevBreath = breathe * (1 - (i - 1) / vine.segments.length) * 0.5;
+        
+        setLineWidth(radius * 2);
+        x.beginPath();
+        x.moveTo(prevSegment.x + prevBreath, prevSegment.y);
+        x.lineTo(x_pos, y_pos);
+        x.stroke();
+      }
+      
+      // Draw thorns directly from segment
+      if (segment.thorns) {
+        segment.thorns.forEach(thorn => {
+          const thornTipX = x_pos + cos(thorn.angle) * thorn.length;
+          const thornTipY = y_pos + sin(thorn.angle) * thorn.length;
+          
+          // Simple line thorn
+          setLineWidth(2);
+          x.beginPath();
+          x.moveTo(x_pos, y_pos);
+          x.lineTo(thornTipX, thornTipY);
+          x.stroke();
+          
+          // Thorn tip - small triangle
+          const tipSize = 2;
+          x.beginPath();
+          x.moveTo(thornTipX, thornTipY);
+          x.lineTo(thornTipX - cos(thorn.angle - 0.5) * tipSize, thornTipY - sin(thorn.angle - 0.5) * tipSize);
+          x.lineTo(thornTipX - cos(thorn.angle + 0.5) * tipSize, thornTipY - sin(thorn.angle + 0.5) * tipSize);
+          x.closePath();
+          x.fill();
+        });
+      }
+    });
+  });
+};
+
+// Check if a point is behind vine silhouettes (for firefly depth effect)
+const isPointBehindVines = (px, py) => {
+  return vineShapes.some(vine => {
+    if (vine.depth < 0.9) return false; // Only foreground vines can occlude
+    
+    // Check if point is near any vine segment
+    return vine.segments && vine.segments.some(segment => {
+      const distance = hyp(px - segment.x, py - segment.y);
+      return distance < segment.thickness * 1.5;
+    });
+  });
 };
 
 // Simple tree silhouette helper
@@ -2935,6 +3217,9 @@ function gameLoop() {
   drawParticles();
   drawScoreTexts();
   
+  // Draw foreground vine silhouettes (parallax layers that can cover fireflies and cursor)
+  drawVineSilhouettes('foreground', now);
+  
   // Screen flash effect during cat eye warnings
   if (gameStarted && !gameOver && colorChangesEnabled) {
     const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
@@ -2998,11 +3283,13 @@ const initGame = () => {
         // Screen became large enough - reinitialize systems
         initStars();
         initCatEyes();
+        initVines();
       }
     } else if (!isScreenTooSmall) {
       // Screen is large enough and size changed - update systems
       initStars();
       initCatEyes();
+      initVines();
     }
   };
   
@@ -3012,6 +3299,11 @@ const initGame = () => {
   // Initialize game systems
   startTime = Date.now();
   runStartTime = Date.now();
+  
+  // Initialize visual systems
+  initStars();
+  initCatEyes();
+  initVines();
   
   // Set first color change timing
   nextColorChangeTime = 600 + F(r() * 300); // 10-15 seconds initially
