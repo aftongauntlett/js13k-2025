@@ -41,17 +41,20 @@ const getRequiredFireflies = () => Math.max(1, F(score / 100) + 1);
 // ===== AUDIO SYSTEM =====
 let a; // AudioContext
 
-// Initialize audio context when needed
+// Initialize audio context when needed (requires user gesture)
 const initAudio = () => {
   if (!a) {
     try {
       a = new AudioContext();
-      if (a.state === 'suspended') a.resume();
     } catch (err) {
       return false;
     }
   }
-  return true;
+  // Resume if suspended (required after user gesture)
+  if (a.state === 'suspended') {
+    a.resume().catch(() => false);
+  }
+  return a.state === 'running' || a.state === 'suspended';
 };
 
 // Simple tone generator for sound effects
@@ -124,6 +127,223 @@ const handleShieldAudio = (isHoldAction = false) => {
     // For taps: just play the chime, no hum
     playShieldChime();
   }
+};
+
+// ===== BACKGROUND MUSIC SYSTEM =====
+// Gentle, relaxing ambient music - soft plucked notes, not sustained organ tones
+// Inspired by lo-fi ambient games like Journey, GRIS, Ori
+// Features: short gentle notes with natural decay, lots of space between sounds
+let bgMusic = null;
+let bgGain = null;
+let musicPlaying = false;
+let audioStarted = false;
+
+// Pentatonic scale in A minor (no harsh intervals, naturally harmonious)
+const notes = {
+  A3: 220.00, C4: 261.63, D4: 293.66, E4: 329.63, G4: 392.00,
+  A4: 440.00, C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99
+};
+
+const createBgMusic = () => {
+  if (!audioEnabled || !initAudio() || bgMusic) return;
+  
+  // Master gain control
+  bgGain = a.createGain();
+  bgGain.gain.value = 0;
+  bgGain.connect(a.destination);
+  
+  let timeouts = [];
+  const bpm = 60; // Slow, relaxing tempo
+  const beatDuration = 60000 / bpm; // 1000ms per beat
+  
+  // Simple, gentle melody with lots of space - like wind chimes
+  const gentleMelody = [
+    // Bar 1: Soft opening
+    { note: 'A4', beat: 0 },
+    { note: 'C5', beat: 2.5 },
+    
+    // Bar 2: Higher sparkle (sparse)
+    { note: 'E5', beat: 5 },
+    { note: 'D5', beat: 7.5 },
+    
+    // Bar 3: Gentle descent
+    { note: 'G4', beat: 10 },
+    { note: 'A4', beat: 12 },
+    
+    // Bar 4: Rest and resolution
+    { note: 'C4', beat: 15 }
+  ];
+  
+  // Occasional bass note for grounding (not sustained)
+  const gentleBass = [
+    { note: 'A3', beat: 0 },
+    { note: 'A3', beat: 8 }  // Only twice per 16-beat cycle
+  ];
+  
+  const playGentleNote = (frequency, startBeat, isLowNote = false) => {
+    const startTime = startBeat * beatDuration;
+    
+    const timeout = setTimeout(() => {
+      if (!bgMusic) return;
+      
+      const osc = a.createOscillator();
+      const gain = a.createGain();
+      const filter = a.createBiquadFilter();
+      
+      // Soft sine wave (not harsh triangle)
+      osc.type = 'sine';
+      osc.frequency.value = frequency;
+      
+      // Very gentle low-pass filter to make it warm and soft
+      filter.type = 'lowpass';
+      filter.frequency.value = isLowNote ? 400 : 1000; // Even softer filtering
+      filter.Q.value = 0.1; // Very gentle slope
+      
+      // Short, plucked envelope - like a gentle bell that fades quickly
+      const now = a.currentTime;
+      const volume = isLowNote ? 0.03 : 0.04; // Very quiet
+      
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(volume, now + 0.02); // Quick, gentle attack
+      gain.gain.exponentialRampToValueAtTime(volume * 0.3, now + 0.3); // Quick fade to sustain
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 2); // Long, natural release
+      
+      osc.connect(filter).connect(gain).connect(bgGain);
+      osc.start(now);
+      osc.stop(now + 2); // Stop after 2 seconds - no endless sustain
+      
+    }, startTime);
+    
+    timeouts.push(timeout);
+  };
+  
+  const playGentlePattern = () => {
+    // Clear previous timeouts to prevent buildup
+    timeouts.forEach(clearTimeout);
+    timeouts = [];
+    
+    // Play sparse bass notes (grounding)
+    gentleBass.forEach(({ note, beat }) => {
+      playGentleNote(notes[note], beat, true);
+    });
+    
+    // Play main melody (very spaced out)
+    gentleMelody.forEach(({ note, beat }) => {
+      playGentleNote(notes[note], beat, false);
+    });
+    
+    // Schedule next loop (16 beats, but with gap for silence)
+    const loopTimeout = setTimeout(() => {
+      if (bgMusic && musicPlaying) playGentlePattern();
+    }, (16 + 4) * beatDuration); // 4 extra beats of silence between loops
+    
+    timeouts.push(loopTimeout);
+  };
+  
+  bgMusic = {
+    cleanup: () => {
+      timeouts.forEach(clearTimeout);
+      timeouts = [];
+    },
+    playGentlePattern
+  };
+  
+  musicPlaying = false;
+};
+
+// Smooth volume transitions
+const fadeBgMusic = (targetVol, duration = 1) => {
+  if (!bgGain) return;
+  bgGain.gain.cancelScheduledValues(a.currentTime);
+  bgGain.gain.exponentialRampToValueAtTime(Math.max(0.001, targetVol), a.currentTime + duration);
+};
+
+// Test audio with a simple beep
+const testAudio = () => {
+  if (!a) return;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.frequency.value = 440;
+  osc.type = 'sine';
+  gain.gain.value = 0.3;
+  gain.gain.exponentialRampToValueAtTime(0.01, a.currentTime + 0.5);
+  osc.connect(gain).connect(a.destination);
+  osc.start();
+  osc.stop(a.currentTime + 0.5);
+};
+
+// Initialize audio on first user interaction
+const startAudioOnUserGesture = () => {
+  console.log('🎵 startAudioOnUserGesture called - audioStarted:', audioStarted, 'audioEnabled:', audioEnabled);
+  if (!audioStarted && audioEnabled) {
+    console.log('🎵 Attempting to init audio...');
+    if (initAudio() && a.state !== 'suspended') {
+      console.log('🎵 Audio initialized successfully, state:', a.state);
+      audioStarted = true;
+      
+      // Test audio first
+      testAudio();
+      
+      // Start background music after successful audio init
+      setTimeout(() => {
+        console.log('🎵 Delayed music start - audioEnabled:', audioEnabled, 'pageVisible:', pageVisible, 'gameStarted:', gameStarted);
+        if (audioEnabled && pageVisible && gameStarted) startBgMusic();
+      }, 600); // Wait for test beep to finish
+    } else {
+      console.log('🎵 Audio init failed or suspended, state:', a ? a.state : 'no context');
+    }
+  }
+  
+  // For debugging: always try to start music if audio is ready but music isn't playing
+  if (audioStarted && audioEnabled && (!bgMusic || !musicPlaying)) {
+    console.log('🎵 Attempting to start music directly...');
+    startBgMusic();
+  }
+};
+
+// Start/resume music with gentle fade-in
+const startBgMusic = () => {
+  if (!audioEnabled || !audioStarted) return;
+  if (!bgMusic) createBgMusic();
+  if (bgMusic && !musicPlaying) {
+    fadeBgMusic(0.15, 3); // Very gentle fade-in over 3 seconds
+    musicPlaying = true;
+    // Start the gentle pattern
+    setTimeout(() => {
+      if (bgMusic && musicPlaying) bgMusic.playGentlePattern();
+    }, 1000); // Longer delay for gentle introduction
+  }
+};
+
+// Pause for tab switches - keeps oscillators alive for instant resume
+const pauseBgMusic = () => {
+  if (bgMusic && musicPlaying) {
+    fadeBgMusic(0.001, 0.5); // Near-silent but not stopped
+    musicPlaying = false;
+  }
+};
+
+// Full cleanup - use when audio disabled or game ends
+const stopBgMusic = () => {
+  if (bgMusic) {
+    if (bgMusic.cleanup) bgMusic.cleanup(); // Clear all timeouts
+    bgMusic = null;
+    musicPlaying = false;
+  }
+};
+
+// Public API functions for background music
+const playBackground = () => {
+  if (!audioStarted && audioEnabled) {
+    if (initAudio() && a.state !== 'suspended') {
+      audioStarted = true;
+    }
+  }
+  startBgMusic();
+};
+
+const stopBackground = () => {
+  stopBgMusic();
 };
 
 // ===== GAME STATE VARIABLES =====
@@ -2181,6 +2401,10 @@ const handleMouseMove = (e) => {
 
 // Mouse down handler
 const handleMouseDown = (e) => {
+  console.log('🖱️ Mouse down detected');
+  // Initialize audio on first user gesture
+  startAudioOnUserGesture();
+  
   // Don't process input when screen is too small
   if (isScreenTooSmall) return;
   
@@ -2247,6 +2471,10 @@ const handleMouseUp = (e) => {
 
 // Keyboard handler
 const handleKeyDown = (e) => {
+  console.log('⌨️ Key down detected:', e.code);
+  // Initialize audio on first user gesture
+  startAudioOnUserGesture();
+  
   // Allow some keys even when screen is too small
   if (isScreenTooSmall) {
     // Only allow audio toggle and help when screen is too small
@@ -2269,10 +2497,25 @@ const handleKeyDown = (e) => {
     e.preventDefault();
     audioEnabled = !audioEnabled;
     if (audioEnabled && gameStarted && !showHelp && pageVisible) {
-      setTimeout(startMusic, 100);
+      // Try to start audio - will initialize if needed
+      if (!audioStarted) startAudioOnUserGesture();
+      setTimeout(startBgMusic, 100);
     } else {
-      stopMusic();
+      stopBgMusic();
+      stopShieldHum(); // Also stop shield hum when audio disabled
     }
+    return;
+  }
+  
+  // Debug: Press B to force start background music
+  if (e.code === "KeyB") {
+    e.preventDefault();
+    console.log('🎵 Manual music start triggered (B key)');
+    if (!audioStarted) startAudioOnUserGesture();
+    setTimeout(() => {
+      console.log('🎵 Force starting background music...');
+      startBgMusic();
+    }, 100);
     return;
   }
   
@@ -2481,6 +2724,11 @@ const restartGame = () => {
   stopShieldHum(); // Stop any shield sounds
   shieldCooldown = 0;
   lastShieldTime = 0;
+  
+  // Reset and restart music
+  if (audioEnabled && pageVisible) {
+    fadeBgMusic(0.15, 1); // Restore normal music volume
+  }
   
   // Reset tutorial
   tutorialComplete = false; // Reset tutorial state so it runs again
@@ -2727,13 +2975,13 @@ const drawHelp = () => {
   
   x.save();
   
-  // Title - centered, bold, and teal glowy
+  // Title - centered, bold, and teal glowy - aligned with cat's eyes
   x.textAlign = "center";
   setFill("#9a9be9");
   x.font = "36px 'Griffy', cursive";
   x.shadowColor = "#9a9be9";
   x.shadowBlur = 12;
-  x.fillText("The Cat & the Luminid", w / 2, 180);
+  x.fillText("The Cat & the Luminid", w / 2, h * 0.1);
   x.shadowBlur = 0; // Reset shadow
   
   // Rules text container - centered overall
@@ -2771,7 +3019,7 @@ const drawHelp = () => {
   ];
   
   rules.forEach((rule, i) => {
-    const y = 230 + i * 24;
+    const y = (h * 0.1 + 50) + i * 24; // Moved up to align with new title position
     if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
       // Uppercase subtitles - teal glowy, centered
       x.textAlign = "center";
@@ -3153,6 +3401,7 @@ function gameLoop() {
       gameWon = true;
       addScoreText('YOU SURVIVED THE NIGHT!', w / 2, h / 2, '#ffdd00', 600);
       playTone(800, 1.0, 0.3); // Victory sound
+      fadeBgMusic(0.25, 2); // Boost music volume for celebration
     }
     
     // Check game over condition: 0 mana AND 0 fireflies
@@ -3161,6 +3410,7 @@ function gameLoop() {
       gameOverTime = Date.now(); // Capture the exact moment of game over
       addScoreText('Game Over!', w / 2, h / 2, '#ff4444', 300);
       playTone(200, 1.0, 0.2); // Game over sound
+      fadeBgMusic(0.03, 3); // Fade music to very low volume over 3 seconds
     }
     
     // Progressive difficulty: spawn fireflies over time
@@ -3318,9 +3568,16 @@ const initGame = () => {
   document.addEventListener('keydown', handleKeyDown);
   document.addEventListener('keyup', handleKeyUp);
   
-  // Page visibility handling for performance
+  // Page visibility handling for performance + audio
   document.addEventListener('visibilitychange', () => {
     pageVisible = !document.hidden;
+    // Auto-pause/resume music and shield audio when tab becomes inactive/active
+    if (pageVisible) {
+      if (audioEnabled && audioStarted) startBgMusic();
+    } else {
+      pauseBgMusic();
+      stopShieldHum(); // Also stop shield hum when tab inactive
+    }
   });
   
   // Spawn initial fireflies
@@ -3328,6 +3585,9 @@ const initGame = () => {
   for (let i = 0; i < initialFireflies; i++) {
     spawnFirefly();
   }
+  
+  // Background music will start on first user interaction (browser requirement)
+  console.log('🎮 Game initialized - audioEnabled:', audioEnabled, 'pageVisible:', pageVisible, 'gameStarted:', gameStarted);
   
   // Start game loop
   gameLoop();
