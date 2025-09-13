@@ -71,8 +71,7 @@ const playTone = (freq, duration = 0.2, volume = 0.1) => {
 };
 
 // Unified shield audio system
-let shieldHumOscillator = null;
-let shieldHumGain = null;
+let shieldShimmerNodes = null; // Will hold multiple oscillators for magical shimmer
 
 const playShieldChime = () => {
   if (!audioEnabled || !initAudio()) return;
@@ -96,25 +95,79 @@ const playShieldChime = () => {
   });
 };
 
-const startShieldHum = () => {
-  if (!audioEnabled || !initAudio() || shieldHumOscillator) return;
+const startShieldShimmer = () => {
+  if (!audioEnabled || !initAudio() || shieldShimmerNodes) return;
   
-  shieldHumOscillator = a.createOscillator();
-  shieldHumGain = a.createGain();
+  // Create warm, magical energy field sound with gentle harmonics
+  shieldShimmerNodes = {
+    oscillators: [],
+    gains: [],
+    filters: []
+  };
   
-  shieldHumOscillator.frequency.value = 80; // Deep space-like hum
-  shieldHumOscillator.type = 'sine';
-  shieldHumGain.gain.value = 0.03; // Atmospheric volume
+  // Use warm, low-mid frequencies for a pleasant magical hum
+  const baseFreq = 120; // Warm fundamental
+  const harmonics = [1, 1.5, 2, 3]; // Natural harmonic series
+  const volumes = [0.018, 0.011, 0.006, 0.003]; // Reduced volumes for better balance
   
-  shieldHumOscillator.connect(shieldHumGain).connect(a.destination);
-  shieldHumOscillator.start();
+  harmonics.forEach((harmonic, i) => {
+    // Main harmonic oscillator
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    const filter = a.createBiquadFilter();
+    
+    // Gentle LFO for magical breathing
+    const lfo = a.createOscillator();
+    const lfoGain = a.createGain();
+    
+    // Setup oscillator - warm sine wave
+    osc.type = 'sine';
+    osc.frequency.value = baseFreq * harmonic;
+    
+    // Soft low-pass filter for warmth
+    filter.type = 'lowpass';
+    filter.frequency.value = 400 + (harmonic * 100);
+    filter.Q.value = 0.5; // Gentle filtering
+    
+    // Very slow, gentle breathing effect
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.2 + (i * 0.1); // Slow, organic breathing
+    lfoGain.gain.value = volumes[i] * 0.3; // Subtle modulation
+    
+    // Base volume
+    gain.gain.value = volumes[i];
+    
+    // Connect breathing modulation
+    lfo.connect(lfoGain);
+    lfoGain.connect(gain.gain);
+    
+    // Audio path: osc -> filter -> gain -> destination
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(a.destination);
+    
+    // Start everything
+    osc.start();
+    lfo.start();
+    
+    // Store references
+    shieldShimmerNodes.oscillators.push(osc, lfo);
+    shieldShimmerNodes.gains.push(gain, lfoGain);
+    shieldShimmerNodes.filters.push(filter);
+  });
 };
 
-const stopShieldHum = () => {
-  if (shieldHumOscillator) {
-    shieldHumOscillator.stop();
-    shieldHumOscillator = null;
-    shieldHumGain = null;
+const stopShieldShimmer = () => {
+  if (shieldShimmerNodes) {
+    // Stop all oscillators gracefully
+    shieldShimmerNodes.oscillators.forEach(osc => {
+      try {
+        osc.stop();
+      } catch (e) {
+        // Ignore if already stopped
+      }
+    });
+    shieldShimmerNodes = null;
   }
 };
 
@@ -122,7 +175,7 @@ const stopShieldHum = () => {
 const handleShieldAudio = (isHoldAction = false) => {
   if (isHoldAction) {
     // For holds: just start the deep hum, no chime
-    startShieldHum();
+    startShieldShimmer();
   } else {
     // For taps: just play the chime, no hum
     playShieldChime();
@@ -306,7 +359,7 @@ const startBgMusic = () => {
   if (!audioEnabled || !audioStarted) return;
   if (!bgMusic) createBgMusic();
   if (bgMusic && !musicPlaying) {
-    fadeBgMusic(0.15, 3); // Very gentle fade-in over 3 seconds
+    fadeBgMusic(0.22, 3); // Very gentle fade-in over 3 seconds
     musicPlaying = true;
     // Start the gentle pattern
     setTimeout(() => {
@@ -1552,12 +1605,12 @@ const handleShieldProtection = (capturedFireflies, now) => {
   
   // Shield consumed after use
   shieldActive = false;
-  stopShieldHum(); // Stop the hum
+  stopShieldShimmer(); // Stop the shimmer
   shieldCooldown = CFG.shieldCooldown + getDifficulty() * 4;
   
   // Audio feedback based on timing
   const soundFreqs = { "PERFECT": 300, "GREAT": 250, "GOOD": 200, "LATE": 180 };
-  playTone(soundFreqs[timingQuality], 0.2, 0.15);
+  playTone(soundFreqs[timingQuality], 0.2, 0.12);
   
   // Visual feedback - minimal
   let protectionText;
@@ -2046,7 +2099,7 @@ const deliverFireflies = (capturedFireflies) => {
     spawnFirefly();
   }
   
-  playTone(600, 0.3, 0.15); // Delivery success sound
+  playTone(600, 0.3, 0.12); // Delivery success sound
   
   // Tutorial progression
   if (!firstDeliveryMade) {
@@ -2137,7 +2190,7 @@ const updatePlayer = (now) => {
     
     if (!inputHeld || manaEnergy <= 0 || summonOverheated) {
       shieldActive = false;
-      stopShieldHum(); // Stop the hum
+      stopShieldShimmer(); // Stop the shimmer
       if (!inputHeld) {
         // No cooldown when released manually
         shieldCooldown = 0;
@@ -2599,7 +2652,7 @@ const handleMouseUp = (e) => {
       setTimeout(() => {
         if (shieldActive) {
           shieldActive = false;
-          stopShieldHum();
+          stopShieldShimmer();
           shieldCooldown = 0; // No cooldown for taps
         }
       }, 100);
@@ -2657,7 +2710,7 @@ const handleKeyDown = (e) => {
       setTimeout(startBgMusic, 100);
     } else {
       stopBgMusic();
-      stopShieldHum(); // Also stop shield hum when audio disabled
+      stopShieldShimmer(); // Also stop shield shimmer when audio disabled
     }
     return;
   }
@@ -2766,7 +2819,7 @@ const handleKeyUp = (e) => {
         setTimeout(() => {
           if (shieldActive) {
             shieldActive = false;
-            stopShieldHum();
+            stopShieldShimmer();
             shieldCooldown = 0; // No cooldown for taps
           }
         }, 100);
@@ -2839,7 +2892,7 @@ const summonFirefly = () => {
   });
   
   createSummonEffect(spawnX, spawnY);
-  playTone(400, 0.15, 0.08);
+  playTone(400, 0.15, 0.06);
   quickFlashPower = 50; // Visual feedback
 };
 
@@ -2896,13 +2949,13 @@ const restartGame = () => {
   overheatStunned = false;
   manaEnergy = 100;
   shieldActive = false;
-  stopShieldHum(); // Stop any shield sounds
+  stopShieldShimmer(); // Stop any shield sounds
   shieldCooldown = 0;
   lastShieldTime = 0;
   
   // Reset and restart music
   if (audioEnabled && pageVisible) {
-    fadeBgMusic(0.15, 1); // Restore normal music volume
+    fadeBgMusic(0.22, 1); // Restore normal music volume
   }
   
   // Reset tutorial
@@ -3800,7 +3853,7 @@ const initGame = () => {
       if (audioEnabled && audioStarted) startBgMusic();
     } else {
       pauseBgMusic();
-      stopShieldHum(); // Also stop shield hum when tab inactive
+      stopShieldShimmer(); // Also stop shield shimmer when tab inactive
     }
   });
   
