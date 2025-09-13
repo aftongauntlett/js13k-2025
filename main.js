@@ -193,9 +193,8 @@ const handleShieldAudio = (isHoldAction = false) => {
 };
 
 // ===== BACKGROUND MUSIC SYSTEM =====
-// Gentle, relaxing ambient music - soft plucked notes, not sustained organ tones
-// Inspired by lo-fi ambient games like Journey, GRIS, Ori
-// Features: short gentle notes with natural decay, lots of space between sounds
+// Gentle ambient music with soft plucked notes and natural decay
+// Features short gentle tones with space between sounds for atmosphere
 let bgMusic = null;
 let bgGain = null;
 let musicPlaying = false;
@@ -400,21 +399,9 @@ const stopBgMusic = () => {
   }
 };
 
-// Public API functions for background music
-const playBackground = () => {
-  if (!audioStarted && audioEnabled) {
-    if (initAudio() && a.state !== 'suspended') {
-      audioStarted = true;
-    }
-  }
-  startBgMusic();
-};
 
-const stopBackground = () => {
-  stopBgMusic();
-};
 
-// Ominous game over sound - dark and atmospheric like Inscryption
+// Dark atmospheric game over melody
 const playGameOverMelody = () => {
   if (!audioEnabled || !initAudio()) return;
   
@@ -811,7 +798,7 @@ const drawTree = (x_pos, y_pos, width, height) => {
 
 // ===== CAT SYSTEM =====
 
-// Whisker constants from original
+// Whisker configuration for cat face
 const WHISKERS = [
   { len: 110, yOff: 45, spread: -25 }, // top
   { len: 140, yOff: 55, spread: 0 },   // middle (longer than others)
