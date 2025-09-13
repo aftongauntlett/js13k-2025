@@ -9,3 +9,17 @@ body {
   height: 100vh;
   cursor: none;
 }
+
+/* Font classes for consistent styling */
+.font-title {
+  font-family: 'Times New Roman', 'Georgia', serif;
+  font-weight: bold;
+}
+
+.font-body {
+  font-family: 'Trebuchet MS', 'Lucida Grande', 'Lucida Sans Unicode', sans-serif;
+}
+
+.font-mono {
+  font-family: 'Lucida Console', 'Courier New', monospace;
+}

@@ -1,4 +1,4 @@
-# ✨ The Luminid & The Cat ✨
+# ✨ Nyx Felis and Lampyris ✨
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![js13k](https://img.shields.io/badge/js13k-2025-orange.svg)](https://js13kgames.com/)
@@ -6,71 +6,42 @@
 [![Commits](https://img.shields.io/github/commit-activity/t/aftongauntlett/js13k-2025?style=flat&logo=git&logoColor=white&label=commits&color=blue)](https://github.com/aftongauntlett/js13k-2025/commits)
 
 ## Game Overview
-> You are The Luminid, a wanderer of nightlight. Drift through the dark forest, where fireflies shimmer as The Cat's ever-watchful eyes follow. Draw them close with your glow, then offer them to The Cat above to renew your fading bioluminescence.
-> 
-> But be wary - when The Cat's gaze begins to change, the bond with your gathered fireflies grows fragile. A single shift could scatter them back to the shadows. Call upon your shield to protect what you've gathered, or summon new fireflies from the night itself, at the cost of your own bioluminescence.
-> 
-> Survive the full night (10 minutes) until sunrise by collecting fireflies, managing your bioluminescence, and timing your shields perfectly when The Cat's eyes shift colors.
+
+You are Lampyris, guide of fireflies in the eternal night. Move through the darkness to collect fireflies and deliver them to Nyx Felis in the Sky to sustain the night.
+
+When Nyx's eyes begin to shift and change colors, your gathered fireflies are in danger. Use your protective shield with perfect timing to save them, or summon new fireflies from the night itself - but both cost precious bioluminescence.
+
+Survive until dawn (10 minutes) by mastering shield timing, managing your energy, and building delivery streaks for bonus points.
 
 ## Controls
 
-- **Mouse Movement**: Guide The Luminid through the night
-- **Tap: Left-Click / Spacebar**: Summon additional fireflies (uses bioluminescence)
-- **Hold: Left-Click / Spacebar**: Activates your shield, draining bioluminescence as long as it's active. Protects against The Cat's gaze shifts. *Perfection is rewarded.*
-- **ESC Key**: Show or hide the help overlay
-- **M Key**: Toggle audio on/off
+- **Mouse Movement**: Guide Lampyris and collect fireflies
+- **Tap (Click/Spacebar)**: Summon fireflies (costs bioluminescence)
+- **Hold (Click/Spacebar)**: Activate protective shield (costs bioluminescence)
+- **ESC**: Show/hide help menu
+- **M**: Toggle audio on/off
 
 ## Key Features
 
-- **Dynamic Difficulty**: The Cat's gaze grows quicker and more unpredictable over time
-- **Perfect Timing System**: Hit the shield at the exact moment for maximum protection and rewards
-- **Heat System**: Overusing shields or summons overheats your power, leaving you briefly exposed
-- **Delivery Streaks**: Chain deliveries for bonus curiosity points
-- **Bioluminescence Management**: Balance energy between summoning fireflies and maintaining shields
+- **Perfect Timing System**: PERFECT timing (white flash) protects ALL fireflies, good timing saves most
+- **Dynamic Difficulty**: Nyx's gaze shifts become quicker and more unpredictable over time
+- **Bioluminescence Management**: Balance energy between summoning fireflies and shield protection
+- **Delivery Streaks**: Chain consecutive deliveries for bonus points
+- **Heat System**: Overuse of magic temporarily overheats your abilities
 
-## Scoring System
+## Objective
 
-- **Cat's Curiosity**: Your primary score, increased by delivering fireflies
-- **Time Until Sunrise**: Survive the full night to see dawn
-- **Streak Bonuses**: Build consecutive deliveries for multiplied rewards
-- **Perfect Run Bonuses**: Complete the night without losing fireflies
-
-## Technical Details
-
-- **Engine**: Vanilla JavaScript with Canvas 2D
-- **Size**: Optimized for js13k competition (<13KB zipped)
-- **Performance**: 60fps gameplay with efficient rendering
-- **Fonts**: Google Fonts integration (Griffy, Poiret One)
-- **Audio**: Dynamic sound effects and ambient audio
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm start
-
-# Build for production
-npm run build
-```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-*Entry for js13k Games 2025 Competition - Built with ✨ by [Afton Gauntlett](https://github.com/aftongauntlett)*
+- **Collect & Deliver**: Gather fireflies and deliver them to Nyx Felis in the Sky
+- **Survive Until Dawn**: Last the full 10 minutes until sunrise
+- **Perfect Shield Timing**: Master the timing for maximum firefly protection
+- **Build Streaks**: Chain deliveries for bonus points
 
 ## Technical Details
 
 - **Engine**: Vanilla JavaScript with Canvas 2D
 - **Size**: Optimized for js13k competition (<13KB zipped)
 - **Performance**: 60fps gameplay with efficient rendering
-- **Fonts**: Google Fonts integration (Griffy, Poiret One)
-- **Audio**: Dynamic sound effects and ambient audio
+- **Audio**: Dynamic sound effects and ambient background music
 
 ## Development
 

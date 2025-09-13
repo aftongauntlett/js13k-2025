@@ -1,6 +1,3 @@
-// js13k-2025: The Cat & the Luminid - Clean Rebuild
-// A firefly collection game where you guide light to feed an ancient cat
-
 // ===== CONSTANTS & CONFIGURATION =====
 const TAU = Math.PI * 2;
 const F = Math.floor;
@@ -20,6 +17,19 @@ const CFG = {
   deliveryRadius: 80,   // Delivery zone size
 };
 
+// Font system - web-safe fonts for JS13K compliance
+const FONTS = {
+  title: "'Times New Roman', 'Georgia', serif", // Elegant serif for titles
+  body: "'Trebuchet MS', 'Lucida Grande', 'Lucida Sans Unicode', sans-serif", // Clean sans-serif for UI
+  mono: "'Lucida Console', 'Courier New', monospace" // Monospace for game messages
+};
+
+// Font helper functions
+const setFont = (size, type = 'body') => x.font = `${size}px ${FONTS[type]}`;
+const setTitleFont = (size) => setFont(size, 'title');
+const setBodyFont = (size) => setFont(size, 'body');
+const setMonoFont = (size) => setFont(size, 'mono');
+
 // ===== UTILITY FUNCTIONS =====
 
 // Math utilities
@@ -35,8 +45,8 @@ const BLACK = (alpha = 1) => `rgba(0,0,0,${alpha})`;
 
 // Game state helpers
 const getDifficulty = () => F(score / 50);
-const getSpeedMultiplier = () => 1 + (score / 200);
-const getRequiredFireflies = () => Math.max(1, F(score / 100) + 1);
+const getSpeedMult = () => 1 + (score / 200);
+const getReqFireflies = () => Math.max(1, F(score / 100) + 1);
 
 // ===== AUDIO SYSTEM =====
 let a; // AudioContext
@@ -71,7 +81,7 @@ const playTone = (freq, duration = 0.2, volume = 0.1) => {
 };
 
 // Unified shield audio system
-let shieldShimmerNodes = null; // Will hold multiple oscillators for magical shimmer
+let shieldNodes = null; // Will hold multiple oscillators for magical shimmer
 
 const playShieldChime = () => {
   if (!audioEnabled || !initAudio()) return;
@@ -96,10 +106,10 @@ const playShieldChime = () => {
 };
 
 const startShieldShimmer = () => {
-  if (!audioEnabled || !initAudio() || shieldShimmerNodes) return;
+  if (!audioEnabled || !initAudio() || shieldNodes) return;
   
   // Create warm, magical energy field sound with gentle harmonics
-  shieldShimmerNodes = {
+  shieldNodes = {
     oscillators: [],
     gains: [],
     filters: []
@@ -151,23 +161,23 @@ const startShieldShimmer = () => {
     lfo.start();
     
     // Store references
-    shieldShimmerNodes.oscillators.push(osc, lfo);
-    shieldShimmerNodes.gains.push(gain, lfoGain);
-    shieldShimmerNodes.filters.push(filter);
+    shieldNodes.oscillators.push(osc, lfo);
+    shieldNodes.gains.push(gain, lfoGain);
+    shieldNodes.filters.push(filter);
   });
 };
 
 const stopShieldShimmer = () => {
-  if (shieldShimmerNodes) {
+  if (shieldNodes) {
     // Stop all oscillators gracefully
-    shieldShimmerNodes.oscillators.forEach(osc => {
+    shieldNodes.oscillators.forEach(osc => {
       try {
         osc.stop();
       } catch (e) {
         // Ignore if already stopped
       }
     });
-    shieldShimmerNodes = null;
+    shieldNodes = null;
   }
 };
 
@@ -327,11 +337,8 @@ const testAudio = () => {
 
 // Initialize audio on first user interaction
 const startAudioOnUserGesture = () => {
-  console.log('🎵 startAudioOnUserGesture called - audioStarted:', audioStarted, 'audioEnabled:', audioEnabled);
   if (!audioStarted && audioEnabled) {
-    console.log('🎵 Attempting to init audio...');
     if (initAudio() && a.state !== 'suspended') {
-      console.log('🎵 Audio initialized successfully, state:', a.state);
       audioStarted = true;
       
       // Test audio first
@@ -339,24 +346,32 @@ const startAudioOnUserGesture = () => {
       
       // Start background music after successful audio init
       setTimeout(() => {
-        console.log('🎵 Delayed music start - audioEnabled:', audioEnabled, 'pageVisible:', pageVisible, 'gameStarted:', gameStarted);
-        if (audioEnabled && pageVisible && gameStarted) startBgMusic();
+        if (audioEnabled && pageVisible && gameStarted) {
+          startBgMusic();
+        }
       }, 600); // Wait for test beep to finish
-    } else {
-      console.log('🎵 Audio init failed or suspended, state:', a ? a.state : 'no context');
     }
   }
   
-  // For debugging: always try to start music if audio is ready but music isn't playing
+  // Always try to start music if audio is ready but music isn't playing
   if (audioStarted && audioEnabled && (!bgMusic || !musicPlaying)) {
-    console.log('🎵 Attempting to start music directly...');
     startBgMusic();
   }
 };
 
 // Start/resume music with gentle fade-in
 const startBgMusic = () => {
-  if (!audioEnabled || !audioStarted) return;
+  if (!audioEnabled) return;
+  
+  // Ensure audio is initialized
+  if (!audioStarted) {
+    if (initAudio() && a.state !== 'suspended') {
+      audioStarted = true;
+    } else {
+      return; // Can't start audio
+    }
+  }
+  
   if (!bgMusic) createBgMusic();
   if (bgMusic && !musicPlaying) {
     fadeBgMusic(0.22, 3); // Very gentle fade-in over 3 seconds
@@ -720,192 +735,7 @@ const drawStars = (now) => {
   });
 };
 
-// ===== FOREST & VINE BACKGROUND SYSTEM =====
-
-// Vine silhouette system with parallax layers
-let vineShapes = [];
-
-// Initialize Tim Burton-style twisted vine system
-const initVines = () => {
-  vineShapes = [];
-  
-  // Left corner twisted vine - growing from bottom left
-  vineShapes.push({
-    type: 'leftCorner',
-    depth: 1.0,
-    segments: createTwistedVinePath('left')
-  });
-  
-  // Right corner twisted vine - growing from bottom right
-  vineShapes.push({
-    type: 'rightCorner',
-    depth: 1.0,
-    segments: createTwistedVinePath('right')
-  });
-  
-  // Bottom center vine - growing upward
-  vineShapes.push({
-    type: 'bottomCenter',
-    depth: 0.8,
-    segments: createTwistedVinePath('bottom')
-  });
-  
-  // Background parallax vines - smaller and lighter
-  vineShapes.push({
-    type: 'leftBackground',
-    depth: 0.6,
-    segments: createTwistedVinePath('leftSmall')
-  });
-  
-  vineShapes.push({
-    type: 'rightBackground',
-    depth: 0.6,
-    segments: createTwistedVinePath('rightSmall')
-  });
-  
-  vineShapes.push({
-    type: 'bottomBackground1',
-    depth: 0.5,
-    segments: createTwistedVinePath('bottomSmall1')
-  });
-  
-  vineShapes.push({
-    type: 'bottomBackground2',
-    depth: 0.5,
-    segments: createTwistedVinePath('bottomSmall2')
-  });
-};
-
-// Create curved vine paths with Burton-style twists and thorns
-const createTwistedVinePath = (direction) => {
-  const segments = [];
-  const segmentCount = 25;
-  
-  for (let i = 0; i < segmentCount; i++) {
-    const t = i / (segmentCount - 1);
-    
-    let x, y, thickness, thorns = [];
-    
-    if (direction === 'left') {
-      // Left vine: starts at bottom-left, curves up and inward with spirals - WIDER
-      const baseX = t * w * 0.2;
-      const baseY = h * 0.95 - (t * h * 0.5);
-      
-      const spiral = sin(t * Math.PI * 4) * (w * 0.08) * (1 - t * 0.5);
-      const coil = cos(t * Math.PI * 6) * (w * 0.04) * (1 - t * 0.7);
-      
-      x = w * 0.02 + baseX + spiral;
-      y = baseY + coil;
-      thickness = (1 - t * 0.8) * 10;
-      
-      // Add thorns every few segments
-      if (i % 2 === 0) {
-        thorns = [
-          { angle: t * 3 + 1, length: 8 + t * 6 },
-          { angle: t * 3 + 4, length: 6 + t * 4 }
-        ];
-      }
-      
-    } else if (direction === 'right') {
-      // Right vine: mirror of left vine - WIDER
-      const baseX = t * w * 0.2;
-      const baseY = h * 0.95 - (t * h * 0.5);
-      
-      const spiral = sin(t * Math.PI * 4) * (w * 0.08) * (1 - t * 0.5);
-      const coil = cos(t * Math.PI * 6) * (w * 0.04) * (1 - t * 0.7);
-      
-      x = w * 0.98 - baseX - spiral;
-      y = baseY + coil;
-      thickness = (1 - t * 0.8) * 10;
-      
-      // Add thorns every few segments
-      if (i % 2 === 0) {
-        thorns = [
-          { angle: t * 3 + 2, length: 8 + t * 6 },
-          { angle: t * 3 + 5, length: 6 + t * 4 }
-        ];
-      }
-      
-    } else if (direction === 'leftSmall') {
-      // Smaller background left vine for parallax
-      const baseX = t * w * 0.12;
-      const baseY = h * 0.9 - (t * h * 0.3);
-      
-      const spiral = sin(t * Math.PI * 3) * (w * 0.04) * (1 - t * 0.6);
-      const coil = cos(t * Math.PI * 4) * (w * 0.02) * (1 - t * 0.8);
-      
-      x = w * 0.1 + baseX + spiral;
-      y = baseY + coil;
-      thickness = (1 - t * 0.9) * 6;
-      
-      // Fewer, smaller thorns
-      if (i % 3 === 0) {
-        thorns = [{ angle: t * 2 + 1, length: 4 + t * 3 }];
-      }
-      
-    } else if (direction === 'rightSmall') {
-      // Smaller background right vine for parallax
-      const baseX = t * w * 0.12;
-      const baseY = h * 0.9 - (t * h * 0.3);
-      
-      const spiral = sin(t * Math.PI * 3) * (w * 0.04) * (1 - t * 0.6);
-      const coil = cos(t * Math.PI * 4) * (w * 0.02) * (1 - t * 0.8);
-      
-      x = w * 0.9 - baseX - spiral;
-      y = baseY + coil;
-      thickness = (1 - t * 0.9) * 6;
-      
-      // Fewer, smaller thorns
-      if (i % 3 === 0) {
-        thorns = [{ angle: t * 2 + 2, length: 4 + t * 3 }];
-      }
-      
-    } else if (direction === 'bottomSmall1' || direction === 'bottomSmall2') {
-      // Small background briar patches
-      const isSecond = direction === 'bottomSmall2';
-      const centerX = isSecond ? w * 0.75 : w * 0.25;
-      const spread = (t - 0.5) * w * 0.15;
-      const baseY = t * h * 0.08;
-      
-      const wave1 = sin(t * Math.PI * 6) * (h * 0.02);
-      const wave2 = cos(t * Math.PI * 2) * (h * 0.015);
-      
-      x = centerX + spread;
-      y = h - baseY + wave1 + wave2;
-      thickness = (1 - t * 0.8) * 4;
-      
-      // Small briar thorns
-      if (i % 2 === 0) {
-        thorns = [{ angle: t * 4, length: 3 + t * 2 }];
-      }
-      
-    } else { // bottom - main briar
-      // Bottom briar: spreads horizontally along bottom like thorny undergrowth
-      const spread = (t - 0.5) * w * 0.6;
-      const baseY = t * h * 0.15;
-      
-      const wave1 = sin(t * Math.PI * 8) * (h * 0.03);
-      const wave2 = cos(t * Math.PI * 3) * (h * 0.02);
-      const thornyness = sin(t * Math.PI * 12) * (h * 0.01);
-      
-      x = w * 0.5 + spread;
-      y = h - baseY + wave1 + wave2 + thornyness;
-      thickness = (1 - t * 0.7) * 8;
-      
-      // Dense thorns for main briar
-      if (i % 2 === 0) {
-        thorns = [
-          { angle: t * 4 + 1.5, length: 6 + t * 4 },
-          { angle: t * 4 + 4.5, length: 5 + t * 3 }
-        ];
-      }
-    }
-    
-    segments.push({ x, y, thickness, thorns });
-  }
-  
-  return segments;
-};
+// ===== FOREST BACKGROUND SYSTEM =====
 
 // Draw atmospheric forest silhouettes
 const drawForest = () => {
@@ -956,102 +786,6 @@ const drawForest = () => {
   x.closePath();
   x.fill();
   
-  // Draw background vines (furthest parallax layer)
-  drawVineSilhouettes('background');
-};
-
-// Draw elegant vine silhouettes with Burton-style curves
-const drawVineSilhouettes = (layer, now = performance.now()) => {
-  if (!vineShapes.length) return;
-  
-  const vinesToDraw = vineShapes.filter(vine => 
-    layer === 'all' || 
-    (layer === 'background' && vine.depth < 0.9) ||
-    (layer === 'foreground' && vine.depth >= 0.9)
-  );
-  
-  vinesToDraw.forEach((vine, index) => {
-    if (!vine.segments || vine.segments.length < 2) return;
-    
-    // Very subtle breathing animation
-    const breathe = sin(now * 0.001 + index * 0.3) * 1.5;
-    
-    // Color based on depth for parallax effect - darker background vines
-    let vineColor;
-    if (vine.depth >= 1.0) {
-      vineColor = "#000000"; // Pure black for foreground
-    } else if (vine.depth >= 0.8) {
-      vineColor = "#050505"; // Very dark for mid-ground
-    } else if (vine.depth >= 0.6) {
-      vineColor = "#0a0a0a"; // Darker for background parallax
-    } else {
-      vineColor = "#101010"; // Darkest for far background
-    }
-    
-    setFill(vineColor);
-    setStroke(vineColor);
-    
-    vine.segments.forEach((segment, i) => {
-      const breatheEffect = breathe * (1 - i / vine.segments.length) * 0.5;
-      const x_pos = segment.x + breatheEffect;
-      const y_pos = segment.y;
-      const radius = Math.max(0.5, segment.thickness);
-      
-      // Draw overlapping circles to create smooth vine body
-      x.beginPath();
-      x.arc(x_pos, y_pos, radius, 0, TAU);
-      x.fill();
-      
-      // Connect segments with lines for seamless vine
-      if (i > 0) {
-        const prevSegment = vine.segments[i - 1];
-        const prevBreath = breathe * (1 - (i - 1) / vine.segments.length) * 0.5;
-        
-        setLineWidth(radius * 2);
-        x.beginPath();
-        x.moveTo(prevSegment.x + prevBreath, prevSegment.y);
-        x.lineTo(x_pos, y_pos);
-        x.stroke();
-      }
-      
-      // Draw thorns directly from segment
-      if (segment.thorns) {
-        segment.thorns.forEach(thorn => {
-          const thornTipX = x_pos + cos(thorn.angle) * thorn.length;
-          const thornTipY = y_pos + sin(thorn.angle) * thorn.length;
-          
-          // Simple line thorn
-          setLineWidth(2);
-          x.beginPath();
-          x.moveTo(x_pos, y_pos);
-          x.lineTo(thornTipX, thornTipY);
-          x.stroke();
-          
-          // Thorn tip - small triangle
-          const tipSize = 2;
-          x.beginPath();
-          x.moveTo(thornTipX, thornTipY);
-          x.lineTo(thornTipX - cos(thorn.angle - 0.5) * tipSize, thornTipY - sin(thorn.angle - 0.5) * tipSize);
-          x.lineTo(thornTipX - cos(thorn.angle + 0.5) * tipSize, thornTipY - sin(thorn.angle + 0.5) * tipSize);
-          x.closePath();
-          x.fill();
-        });
-      }
-    });
-  });
-};
-
-// Check if a point is behind vine silhouettes (for firefly depth effect)
-const isPointBehindVines = (px, py) => {
-  return vineShapes.some(vine => {
-    if (vine.depth < 0.9) return false; // Only foreground vines can occlude
-    
-    // Check if point is near any vine segment
-    return vine.segments && vine.segments.some(segment => {
-      const distance = hyp(px - segment.x, py - segment.y);
-      return distance < segment.thickness * 1.5;
-    });
-  });
 };
 
 // Simple tree silhouette helper
@@ -1463,7 +1197,7 @@ const drawCatEyes = (now) => {
   x.shadowBlur = 0;
   x.globalAlpha = 1;
   
-  // Draw mystical grin outline - testing mode (always visible)
+  // Draw mystical grin outline
   drawMysticalGrin(eyeX, eyeY, now, mouseInSky, catProximity);
 };
 
@@ -1733,12 +1467,12 @@ const getTimingColor = (quality) => {
   return colors[quality] || "#ffaa00";
 };
 
-// Draw the delivery zone near the cat
+// Draw the delivery zone near Nyx Felis
 const drawDeliveryZone = (now) => {
   const centerX = w / 2;
-  const centerY = h * 0.2; // Match the cat nose position
+  const centerY = h * 0.2; // Match Nyx's nose position
   const radius = 50; // Delivery zone radius for text positioning
-  const requiredFireflies = getRequiredFireflies();
+  const requiredFireflies = getReqFireflies();
   const capturedCount = otherFireflies.filter(f => f.captured).length;
   const canDeliver = capturedCount >= requiredFireflies;
 
@@ -1794,7 +1528,7 @@ const drawScoreTexts = () => {
       fontSize = 16;
     }
     
-    const fontFamily = isShieldMessage ? "'Poiret One', sans-serif" : "'Lucida Console', 'Courier New', monospace";
+    const fontFamily = isShieldMessage ? FONTS.body : FONTS.mono;
     
     setFill(text.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
     x.font = `${fontSize}px ${fontFamily}`;
@@ -1830,7 +1564,7 @@ const spawnFirefly = () => {
 
 // Update firefly behavior and movement
 const updateFireflies = (playerX, playerY) => {
-  const speedMultiplier = getSpeedMultiplier();
+  const speedMultiplier = getSpeedMult();
   
   otherFireflies.forEach(firefly => {
     if (firefly.captured) {
@@ -2037,12 +1771,12 @@ const drawFireflies = (now) => {
 // Check delivery zone for captured fireflies
 const checkDeliveryZone = (playerX, playerY) => {
   const centerX = w / 2;
-  const centerY = h * 0.2; // Match the cat nose position
+  const centerY = h * 0.2; // Match Nyx's nose position
   const distance = hyp(playerX - centerX, playerY - centerY);
   
   if (distance < CFG.deliveryRadius) {
     const capturedFireflies = otherFireflies.filter(f => f.captured);
-    const requiredFireflies = getRequiredFireflies();
+    const requiredFireflies = getReqFireflies();
     
     if (capturedFireflies.length >= requiredFireflies) {
       deliverFireflies(capturedFireflies);
@@ -2053,7 +1787,7 @@ const checkDeliveryZone = (playerX, playerY) => {
   return false;
 };
 
-// Deliver captured fireflies to the cat
+// Deliver captured fireflies to Nyx Felis
 const deliverFireflies = (capturedFireflies) => {
   // Streak bonus system
   deliveryStreak++;
@@ -2257,7 +1991,7 @@ const updateSummonHeat = () => {
   }
 };
 
-// Draw the player firefly (luminid)
+// Draw the player firefly (Lampyris)
 const drawPlayerFirefly = (playerX, playerY, now) => {
   // Don't draw if player is off-screen or stunned
   if (!mouseInBounds && !charging) return;
@@ -2284,7 +2018,7 @@ const drawPlayerFirefly = (playerX, playerY, now) => {
     bodyColor = `rgba(80, 80, 80, ${weakPulse})`;
     glowColor = `rgba(60, 60, 60, ${weakPulse * 0.3})`;
   } else {
-    // Beautiful magical blue firefly - special luminid species
+    // Beautiful magical blue firefly - special Lampyris species
     const blueIntensity = naturalGlow;
     bodyColor = `rgba(140, 200, 255, ${blueIntensity})`;
     glowColor = `rgba(180, 220, 255, ${blueIntensity * 0.6})`;
@@ -2592,7 +2326,6 @@ const handleMouseMove = (e) => {
 
 // Mouse down handler
 const handleMouseDown = (e) => {
-  console.log('🖱️ Mouse down detected');
   // Initialize audio on first user gesture
   startAudioOnUserGesture();
   
@@ -2664,7 +2397,6 @@ const handleMouseUp = (e) => {
 
 // Keyboard handler
 const handleKeyDown = (e) => {
-  console.log('⌨️ Key down detected:', e.code);
   // Initialize audio on first user gesture
   startAudioOnUserGesture();
   
@@ -2714,18 +2446,7 @@ const handleKeyDown = (e) => {
     }
     return;
   }
-  
-  // Debug: Press B to force start background music
-  if (e.code === "KeyB") {
-    e.preventDefault();
-    console.log('🎵 Manual music start triggered (B key)');
-    if (!audioStarted) startAudioOnUserGesture();
-    setTimeout(() => {
-      console.log('🎵 Force starting background music...');
-      startBgMusic();
-    }, 100);
-    return;
-  }
+
   
   // Toggle help
   if (e.code === "Escape") {
@@ -2740,38 +2461,7 @@ const handleKeyDown = (e) => {
     showHelp = !showHelp;
     return;
   }
-  
-  // TODO: REMOVE - Testing shortcuts for development
-  // Testing shortcut to trigger game over (C key)
-  if (e.code === "KeyC") {
-    e.preventDefault();
-    if (!gameOver && !gameWon) {
-      // Simply trigger the natural game over condition
-      manaEnergy = 0;
-      otherFireflies = []; // Remove all fireflies
-    }
-    return;
-  }
 
-  // TODO: REMOVE - Testing shortcut to keep tutorial always on (T key)
-  if (e.code === "KeyT") {
-    e.preventDefault();
-    tutorialComplete = false;
-    tutorialStep = 0;
-    console.log("Tutorial mode forced on - step:", tutorialStep);
-    return;
-  }
-
-  // TODO: REMOVE - Testing shortcut to trigger win screen (W key)
-  if (e.code === "KeyW") {
-    e.preventDefault();
-    if (!gameOver && !gameWon) {
-      // Set start time to make it look like full night duration has passed
-      startTime = Date.now() - NIGHT_DURATION;
-      console.log("Win condition triggered - timer set to 0");
-    }
-    return;
-  }
   
   // Shield with spacebar
   if (e.code === "Space") {
@@ -2797,6 +2487,7 @@ const handleKeyDown = (e) => {
     }
     spacePressed = true;
   }
+
 };
 
 // Handle key releases
@@ -3007,8 +2698,8 @@ const drawTutorialGuidance = () => {
     case 0:
       // First step: Collect 5 fireflies and deliver them
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Collect fireflies and lead them to The Cat in the Sky", w / 2, h - 100);
+      x.font = `20px ${FONTS.body}`;
+      x.fillText("Collect fireflies and lead them to Nyx Felis in the Sky", w / 2, h - 100);
       
       // Highlight "Move your mouse" in green
       setFill(`rgba(255, 255, 255, ${pulse})`);
@@ -3032,7 +2723,7 @@ const drawTutorialGuidance = () => {
     case 1:
       // Bioluminescence management - after first delivery
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "20px 'Poiret One', sans-serif";
+      x.font = `20px ${FONTS.body}`;
       x.fillText("Your bioluminescence attracts fireflies.", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
@@ -3042,7 +2733,7 @@ const drawTutorialGuidance = () => {
     case 1.5:
       // Overheat explanation - after summoning a few times
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "18px 'Poiret One', sans-serif";
+      x.font = `18px ${FONTS.body}`;
       x.fillText("CAREFUL! Too much summoning causes overheating.", w / 2, h - 110);
       x.fillText("Turn in fireflies to restore energy and prevent overload.", w / 2, h - 85);
       
@@ -3053,23 +2744,23 @@ const drawTutorialGuidance = () => {
     case 2:
       // Shield mechanics - after summoning and learning about mana
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "20px 'Poiret One', sans-serif";
-      x.fillText("Watch the cat's eyes carefully.", w / 2, h - 100);
+      x.font = `20px ${FONTS.body}`;
+      x.fillText("Watch Nyx's eyes carefully.", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
       x.fillText("Hold SPACE or MOUSE when its eyes flash!", w / 2, h - 75);
       
       if (tutorialMissedShield) {
         setFill(`rgba(255, 100, 100, ${pulse})`); // Red for emphasis
-        x.font = "16px 'Poiret One', sans-serif";
-        x.fillText("Shield protects your fireflies from the cat's hunger", w / 2, h - 50);
+        x.font = `16px ${FONTS.body}`;
+        x.fillText("Shield protects your fireflies from Nyx's hunger", w / 2, h - 50);
       }
       break;
       
     case 3:
       // Resource management warning
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "20px 'Poiret One', sans-serif";
+      x.font = `20px ${FONTS.body}`;
       x.fillText("Overuse your powers and they'll abandon you", w / 2, h - 100);
       x.fillText("Manage resources carefully. The night is long and unforgiving", w / 2, h - 75);
       break;
@@ -3077,7 +2768,7 @@ const drawTutorialGuidance = () => {
     case 4:
       // Mana restoration step
       setFill(`rgba(100, 255, 255, ${pulse})`);
-      x.font = "20px 'Poiret One', sans-serif";
+      x.font = `20px ${FONTS.body}`;
       x.fillText("Energy restored! You're ready for the challenge.", w / 2, h - 100);
       x.fillText("Remember: Turn in fireflies to restore your power", w / 2, h - 75);
       break;
@@ -3085,7 +2776,7 @@ const drawTutorialGuidance = () => {
     case 5:
       // Final warning before full gameplay
       setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = "20px 'Poiret One', sans-serif";
+      x.font = `20px ${FONTS.body}`;
       x.fillText("Now... survive until dawn. If you can", w / 2, h - 100);
       
       setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
@@ -3095,7 +2786,7 @@ const drawTutorialGuidance = () => {
     case 6:
       // Tutorial completion message
       setFill(`rgba(100, 255, 100, ${pulse})`);
-      x.font = "22px 'Poiret One', sans-serif";
+      x.font = `22px ${FONTS.body}`;
       x.fillText("Tutorial Complete! Survive the night...", w / 2, h - 100);
       break;
   }
@@ -3144,15 +2835,15 @@ const drawScreenSizeWarning = () => {
   
   // Title with glow effect
   setFill("#9a9be9");
-  x.font = "32px 'Griffy', cursive";
+  setTitleFont(32);
   x.shadowColor = "#9a9be9";
   x.shadowBlur = 15;
-  x.fillText("The Cat & the Luminid", centerX, centerY - 120);
+  x.fillText("Nyx Felis and Lampyris", centerX, centerY - 120);
   x.shadowBlur = 0;
   
   // Main message
   setFill("#ffffff");
-  x.font = "24px 'Poiret One', sans-serif";
+  x.font = `24px ${FONTS.body}`;
   
   if (isMobileDevice()) {
     x.fillText("This mystical experience requires", centerX, centerY - 60);
@@ -3164,25 +2855,25 @@ const drawScreenSizeWarning = () => {
   
   // Requirements
   setFill("#cccccc");
-  x.font = "18px 'Poiret One', sans-serif";
+  x.font = `18px ${FONTS.body}`;
   if (!isMobileDevice()) {
     x.fillText(`Minimum: ${MIN_WIDTH} × ${MIN_HEIGHT} pixels`, centerX, centerY + 20);
     
     // Current size info
     setFill("#999999");
-    x.font = "16px 'Poiret One', sans-serif";
+    x.font = `16px ${FONTS.body}`;
     x.fillText(`Current: ${w} × ${h} pixels`, centerX, centerY + 50);
   }
   
   // Instructions
   setFill("#69e4de");
-  x.font = "20px 'Poiret One', sans-serif";
+  x.font = `20px ${FONTS.body}`;
   x.shadowColor = "#69e4de";
   x.shadowBlur = 8;
   
   if (isMobileDevice()) {
     x.fillText("Please use a desktop or laptop computer", centerX, centerY + 100);
-    x.fillText("for the optimal luminid experience", centerX, centerY + 130);
+    x.fillText("for the optimal gameplay experience", centerX, centerY + 130);
   } else {
     x.fillText("Try maximizing your browser window", centerX, centerY + 100);
     x.fillText("or adjusting your zoom level", centerX, centerY + 130);
@@ -3199,102 +2890,95 @@ const drawScreenSizeWarning = () => {
 const drawHelp = () => {
   if (!showHelp) return;
   
-  // Semi-transparent overlay
-  setFill(BLACK(0.8));
+  // Darker semi-transparent overlay
+  setFill(BLACK(0.9));
   x.fillRect(0, 0, w, h);
   
   x.save();
   
-  // Title - centered, bold, and teal glowy - aligned with cat's eyes
+  // Title - larger, different color, elegant serif
   x.textAlign = "center";
-  setFill("#9a9be9");
-  x.font = "36px 'Griffy', cursive";
-  x.shadowColor = "#9a9be9";
-  x.shadowBlur = 12;
-  x.fillText("The Cat & the Luminid", w / 2, h * 0.1);
-  x.shadowBlur = 0; // Reset shadow
+  setFill("#d4af37"); // Gold color to distinguish from body text
+  x.font = `42px ${FONTS.title}`;
+  x.shadowColor = "#d4af37";
+  x.shadowBlur = 8;
+  x.fillText("Nyx Felis and Lampyris", w / 2, h * 0.08);
+  x.shadowBlur = 0;
   
-  // Rules text container - centered overall
-  const rulesWidth = 600;
-  const rulesX = (w - rulesWidth) / 2;
-  x.font = "20px 'Poiret One', sans-serif";
-  setFill("#cccccc");
+  // Content area setup with tighter spacing
+  const contentStartY = h * 0.08 + 50; // Less space after title
+  const lineHeight = 28; // Increased line height for better readability
   
   const rules = [
-    "You are the Luminid, guide of fireflies in the eternal night.",
-    "",
     "CONTROLS:",
-    "- Move mouse to guide your luminid and collect fireflies",
+    "- Move mouse to guide Lampyris and collect fireflies",
     "- Tap to summon fireflies (costs bioluminescence)",
     "- Press and hold to activate protective shield (costs bioluminescence)",
-    "- ESC for help menu • M to toggle audio",
+    `- ESC for help menu • M - Audio: ${audioEnabled ? 'ON' : 'OFF'}`,
     "",
     "OBJECTIVE:",
-    "- Collect fireflies and deliver them to The Cat in the Sky",
-    "- The Cat feeds on light to sustain the night",
+    "- Collect fireflies and deliver them to Nyx Felis in the Sky",
+    "- Nyx Felis feeds on light to sustain the night",
     "- Survive until dawn (10 minutes) and live to see another night",
     "- Build delivery streaks for bonus points",
     "",
     "DANGER:",
-    "- When The Cat's eyes begin to shift and change colors, be prepared",
+    "- When Nyx's eyes begin to shift and change colors, be prepared",
     "- PERFECT timing (white flash) protects ALL fireflies in view",
     "- Good timing (yellow/green) saves most captured fireflies",
     "- Even without shield, some fireflies may escape to safety",
     "",
     "STRATEGY:",
     "- Manage bioluminescence wisely - summoning and shields costs magic",
-    "- Don't overheat your luminid from excessive magic use",
+    "- Don't overheat Lampyris from excessive magic use",
     "- Master perfect shield timing for maximum protection",
-    "- Watch for The Cat's eyes - it grows restless..."
+    "- Watch for Nyx's eyes - she grows restless..."
   ];
   
   // Create clipping region for scrollable content
   x.save();
-  const contentTop = h * 0.1 + 60;
-  const contentHeight = h - contentTop - 100; // Leave space for close instruction
+  const contentTop = contentStartY;
+  const contentHeight = h - contentTop - 120; // More space for close instruction
   x.beginPath();
-  // Add padding only at top to prevent partial text rendering, keep bottom boundary strict
-  x.rect(0, contentTop - 15, w, contentHeight + 15);
+  x.rect(0, contentTop - 20, w, contentHeight + 20);
   x.clip();
   
   rules.forEach((rule, i) => {
-    const y = contentTop + i * 24 - helpScrollOffset; // Apply scroll offset
+    const y = contentTop + i * lineHeight - helpScrollOffset;
     
-    // Only render lines that are visible in the clipped area
-    if (y > contentTop - 30 && y < contentTop + contentHeight + 30) {
+    // Only render lines that are visible
+    if (y > contentTop - 40 && y < contentTop + contentHeight + 40) {
+      x.textAlign = "center";
+      
       if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
-        // Uppercase subtitles - teal glowy, centered
-        x.textAlign = "center";
-        setFill("#69e4de");
-        x.shadowColor = "#69e4de";
-        x.shadowBlur = 10;
-        x.font = "bold 20px 'Poiret One', sans-serif";
+        // Section headers - dusty pastel orange, minimal glow
+        setFill("#ce6d54");
+        x.shadowColor = "#ce6d54";
+        x.shadowBlur = 1; // Very minimal glow
+        x.font = `bold 22px ${FONTS.body}`;
         x.fillText(rule, w / 2, y);
       } else if (rule.startsWith("- ")) {
-        // Bullet points with dashes
-        x.textAlign = "center";
+        // Bullet points - clean white, no glow
         setFill("#ffffff");
-        x.shadowColor = "#ffffff";
-        x.shadowBlur = 8;
-        x.font = "15px 'Poiret One', sans-serif";
+        x.shadowBlur = 0;
+        x.font = `16px ${FONTS.body}`;
         x.fillText(rule, w / 2, y);
       } else if (rule !== "") {
-        // Regular text - centered
-        x.textAlign = "center";
-        setFill("#e0e0e0");
+        // Description text - same size as bullets, soft gray
+        setFill("#cccccc");
         x.shadowBlur = 0;
-        x.font = "20px 'Poiret One', sans-serif";
+        x.font = `16px ${FONTS.body}`;
         x.fillText(rule, w / 2, y);
       }
-      x.shadowBlur = 0; // Reset shadow after each line
+      x.shadowBlur = 0;
     }
   });
   
   x.restore(); // Restore clipping
   
-  // Scroll indicators and instructions
-  const totalContentHeight = rules.length * 24;
-  const maxScroll = Math.max(0, totalContentHeight - contentHeight + 50);
+  // Scroll calculation with new line height
+  const totalContentHeight = rules.length * lineHeight;
+  const maxScroll = Math.max(0, totalContentHeight - contentHeight + 60);
   
   // Update max scroll based on actual content
   if (maxScroll !== 400) {
@@ -3305,26 +2989,55 @@ const drawHelp = () => {
   // Show scroll indicators if content is scrollable
   if (maxScroll > 0) {
     x.textAlign = "center";
-    setFill("#69e4de");
-    x.shadowColor = "#69e4de";
-    x.shadowBlur = 8;
-    x.font = "14px 'Poiret One', sans-serif";
+    x.font = `14px ${FONTS.body}`;
     
     if (helpScrollOffset > 0) {
-      x.fillText("↑ Scroll up (Arrow keys/Mouse wheel)", w / 2, contentTop - 10);
+      // Background for scroll up text
+      const upText = "↑ Scroll up (Arrow keys/Mouse wheel)";
+      const upMetrics = x.measureText(upText);
+      const upY = contentTop - 10;
+      
+      // Draw semi-transparent background
+      setFill("rgba(16, 16, 32, 0.8)");
+      x.fillRect(w / 2 - upMetrics.width / 2 - 10, upY - 18, upMetrics.width + 20, 24);
+      
+      // Draw text with enhanced shadow
+      setFill("#7fc2a4");
+      x.shadowColor = "rgba(0, 0, 0, 0.8)";
+      x.shadowBlur = 3;
+      x.shadowOffsetY = 1;
+      x.fillText(upText, w / 2, upY);
     }
     if (helpScrollOffset < maxScroll) {
-      x.fillText("↓ Scroll down (Arrow keys/Mouse wheel)", w / 2, contentTop + contentHeight + 20);
+      // Background for scroll down text
+      const downText = "↓ Scroll down (Arrow keys/Mouse wheel)";
+      const downMetrics = x.measureText(downText);
+      const downY = contentTop + contentHeight + 20;
+      
+      // Draw semi-transparent background
+      setFill("rgba(16, 16, 32, 0.8)");
+      x.fillRect(w / 2 - downMetrics.width / 2 - 10, downY - 18, downMetrics.width + 20, 24);
+      
+      // Draw text with enhanced shadow
+      setFill("#7fc2a4");
+      x.shadowColor = "rgba(0, 0, 0, 0.8)";
+      x.shadowBlur = 3;
+      x.shadowOffsetY = 1;
+      x.fillText(downText, w / 2, downY);
     }
+    
+    // Reset shadow effects
+    x.shadowBlur = 0;
+    x.shadowOffsetY = 0;
   }
   
-  // "Press or click" text - centered and teal glowy
+  // Close instruction - cleaner styling
   x.textAlign = "center";
-  setFill("#4dd0e1");
-  x.shadowColor = "#4dd0e1";
-  x.shadowBlur = 10;
-  x.font = "bold 20px 'Poiret One', sans-serif";
-  x.fillText("Press ESC or click to close", w / 2, h - 40);
+  setFill("#9a9695");
+  x.shadowColor = "#9a9695";
+  x.shadowBlur = 1;
+  x.font = `18px ${FONTS.body}`;
+  x.fillText("Press ESC or click to close", w / 2, h - 50);
   x.shadowBlur = 0;
   
   x.restore();
@@ -3334,134 +3047,98 @@ const drawHelp = () => {
 const drawGameOverScreen = () => {
   if (!gameOver && !gameWon) return;
   
-  // Calculate survival time - use different logic for win vs loss
+  // Calculate survival time
   let gameTime, gameMinutes, gameSeconds, timeString;
   if (gameWon) {
-    // Victory: full night duration
     gameTime = NIGHT_DURATION;
     gameMinutes = Math.floor(gameTime / 60000);
     gameSeconds = Math.floor((gameTime % 60000) / 1000);
     timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
   } else {
-    // Game over: time survived until failure
     gameTime = gameOverTime ? (gameOverTime - (startTime || gameOverTime)) : 0;
     gameMinutes = Math.floor(gameTime / 60000);
     gameSeconds = Math.floor((gameTime % 60000) / 1000);
     timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
   }
   
-  // Calculate scores and bonuses
-  const survivalMinutes = Math.max(gameTime / 60000, 0.1);
-  const efficiencyScore = Math.floor((totalCollected * 60) / survivalMinutes);
+  // Simplified final score calculation
+  const finalScore = gameWon ? score + 1000 + (bestStreak * 50) : score;
   
-  // Victory bonuses (only for wins)
-  const survivalBonus = gameWon ? 1000 : 0;
-  const perfectBonus = gameWon && totalLost === 0 ? 500 : 0;
-  const streakBonus = gameWon ? bestStreak * 50 : 0;
-  const finalScore = gameWon ? score + survivalBonus + perfectBonus + streakBonus : score;
-  
-  // Semi-transparent overlay
+  // Dark overlay
   setFill(BLACK(0.9));
   x.fillRect(0, 0, w, h);
   
   x.save();
   x.textAlign = "center";
   
-  let currentY = h / 2 - 180; // Start higher for better spacing
+  let currentY = h / 2 - 120;
   
-  // Title with proper spacing
+  // Title
   if (gameWon) {
-    setFill("#44cc44"); // Green for victory
-    x.font = "48px 'Griffy', cursive";
-    x.shadowColor = "#44cc44";
-    x.shadowBlur = 15;
+    setFill("#22aa22");
+    x.font = `52px ${FONTS.title}`;
+    x.shadowColor = "#22aa22";
+    x.shadowBlur = 12;
     x.fillText("DAWN BREAKS!", w / 2, currentY);
   } else {
-    setFill("#cc4444"); // Red for game over
-    x.font = "48px 'Griffy', cursive";
-    x.shadowColor = "#cc4444";
-    x.shadowBlur = 15;
-    x.fillText("The Light Fades", w / 2, currentY);
+    setFill("#aa2222");
+    x.font = `52px ${FONTS.title}`;
+    x.shadowColor = "#aa2222";
+    x.shadowBlur = 12;
+    x.fillText("THE LIGHT FADES", w / 2, currentY);
   }
   x.shadowBlur = 0;
-  currentY += 60; // Good spacing after title
+  currentY += 70;
   
-  // Subtitle with consistent font
-  setFill("#cccccc");
-  x.font = "24px 'Poiret One', sans-serif";
+  // Subtitle
+  setFill("#bbbbbb");
+  x.font = `20px ${FONTS.body}`;
   if (gameWon) {
-    x.fillText("You survived the night!", w / 2, currentY);
+    x.fillText("You guided fireflies through the eternal night", w / 2, currentY);
   } else {
-    x.fillText("Your bioluminescent journey ends", w / 2, currentY);
+    x.fillText("The darkness has claimed the light", w / 2, currentY);
   }
-  currentY += 50; // Space before stats
+  currentY += 60;
   
-  // Key stats section - only the most important ones
+  // Core stats - same for both win/loss
   setFill("#ffffff");
-  x.font = "22px 'Poiret One', sans-serif";
+  x.font = `24px ${FONTS.body}`;
   
   x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, currentY);
-  currentY += 35;
+  currentY += 40;
   
-  if (totalLost > 0) {
+  if (gameWon || totalLost > 0) {
+    setFill("#ffaa66");
     x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, currentY);
-    currentY += 35;
+    currentY += 40;
   }
   
+  setFill("#66aaff");
   x.fillText(`Time Survived: ${timeString}`, w / 2, currentY);
-  currentY += 35;
+  currentY += 60;
   
-  // Show streak only if notable
-  if (bestStreak >= 3) {
-    x.fillText(`Best Streak: ${bestStreak}x`, w / 2, currentY);
-    currentY += 35;
-  }
-  
-  currentY += 25; // Extra space before score section
-  
+  // Final score
   if (gameWon) {
-    // Victory: Clean score breakdown
-    setFill("#aaaaaa");
-    x.font = "20px 'Poiret One', sans-serif";
-    x.fillText(`Base Cat's Curiosity: ${score}`, w / 2, currentY);
-    currentY += 30;
-    
-    if (survivalBonus > 0) {
-      setFill("#88ff88");
-      x.fillText(`+ Night Survival Bonus: ${survivalBonus}`, w / 2, currentY);
-      currentY += 30;
-    }
-    
-    if (streakBonus > 0) {
-      setFill("#ffaa44");
-      x.fillText(`+ Streak Bonus: ${streakBonus}`, w / 2, currentY);
-      currentY += 30;
-    }
-    
-    if (perfectBonus > 0) {
-      setFill("#44ff44");
-      x.fillText(`+ Perfect Run Bonus: ${perfectBonus}`, w / 2, currentY);
-      currentY += 30;
-    }
-    
-    currentY += 15; // Space before final score
-    
-    // Final score with emphasis
-    setFill("#ffffff");
-    x.font = "28px 'Poiret One', sans-serif";
-    x.fillText(`Final Cat's Curiosity: ${finalScore}`, w / 2, currentY);
+    setFill("#44dd44");
+    x.font = `32px ${FONTS.title}`;
+    x.shadowColor = "#44dd44";
+    x.shadowBlur = 8;
+    x.fillText(`Nyx's Favor: ${finalScore}`, w / 2, currentY);
+    x.shadowBlur = 0;
   } else {
-    // Game over: Just show final score
-    setFill("#ffffff");
-    x.font = "24px 'Poiret One', sans-serif";
-    x.fillText(`Final Cat's Curiosity: ${score}`, w / 2, currentY);
+    setFill("#dd4444");
+    x.font = `32px ${FONTS.title}`;
+    x.shadowColor = "#dd4444";
+    x.shadowBlur = 8;
+    x.fillText(`Light Preserved: ${score}`, w / 2, currentY);
+    x.shadowBlur = 0;
   }
   
-  currentY += 60; // Good spacing before restart instruction
+  currentY += 80;
   
   // Restart instruction
-  setFill("#bbbbbb");
-  x.font = "20px 'Poiret One', sans-serif";
+  setFill("#888888");
+  x.font = `18px ${FONTS.body}`;
   x.fillText("Click to play again", w / 2, currentY);
   
   x.restore();
@@ -3487,14 +3164,14 @@ const drawMainUI = () => {
   }
   
   setFill(scoreColor);
-  x.font = "22px 'Poiret One', sans-serif";
+  x.font = `22px ${FONTS.body}`;
   x.fillText(`Cat's Curiosity: ${score}`, 20, 30);
   
   // Streak display (when active) - directly under score
   if (deliveryStreak >= 2) {
     const streakColor = deliveryStreak >= 5 ? "#ffcc99" : "#99ff99";
     setFill(streakColor);
-    x.font = "18px 'Poiret One', sans-serif";
+    x.font = `18px ${FONTS.body}`;
     x.fillText(`${deliveryStreak}x streak`, 20, 55);
   }
   
@@ -3514,14 +3191,14 @@ const drawMainUI = () => {
     // Color based on time remaining
     const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
     setFill(timeColor);
-    x.font = "22px 'Poiret One', sans-serif";
+    x.font = `22px ${FONTS.body}`;
     
     // Draw time at fixed position (right-aligned)
     x.textAlign = "right";
     x.fillText(timeText, w - 20, 30);
     
     // Draw label at fixed position (right-aligned, offset by fixed amount)
-    x.fillText("Time Until Sunrise: ", w - 80, 30); // Fixed offset of 80px from right edge
+    x.fillText("Time: ", w - 80, 30); // Fixed offset of 80px from right edge
   }
   
   // === LEFT SIDE: Bioluminescence and Shield (with gap) ===
@@ -3530,22 +3207,22 @@ const drawMainUI = () => {
   
   // Bioluminescence display (always show) - use fixed cyan for readability
   setFill("#00dddd"); // Cyan color for good contrast against dark sky
-  x.font = "18px 'Poiret One', sans-serif";
+  x.font = `18px ${FONTS.body}`;
   x.fillText(`Bioluminescence: ${Math.floor(manaEnergy)}`, 20, leftY);
   leftY += 25;
   
   // Shield status
   if (shieldActive) {
     setFill("#99ccff");
-    x.font = "18px 'Poiret One', sans-serif";
+    x.font = `18px ${FONTS.body}`;
     x.fillText("SHIELD ACTIVE", 20, leftY);
   } else if (shieldCooldown > 0) {
     setFill("#cccccc");
-    x.font = "18px 'Poiret One', sans-serif";
+    x.font = `18px ${FONTS.body}`;
     x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
   } else {
     setFill("#99ff99");
-    x.font = "18px 'Poiret One', sans-serif";
+    x.font = `18px ${FONTS.body}`;
     x.fillText("Shield: Ready", 20, leftY);
   }
   leftY += 25;
@@ -3555,7 +3232,7 @@ const drawMainUI = () => {
     const alpha = 1 - (summonFeedback.life / summonFeedback.maxLife);
     setFill(`rgba(255, 255, 255, ${alpha})`);
     x.textAlign = "center";
-    x.font = "20px 'Poiret One', sans-serif";
+    x.font = `20px ${FONTS.body}`;
     x.fillText(summonFeedback.text, w / 2, h / 2 - 150);
   }
   
@@ -3565,7 +3242,7 @@ const drawMainUI = () => {
   
   if (summonOverheated || recentAttempt) {
     setFill("#ff9999");
-    x.font = "18px 'Poiret One', sans-serif";
+    x.font = `18px ${FONTS.body}`;
     // Position under player cursor for better visibility
     x.fillText("OVERHEATED", mx, my + 30);
   }
@@ -3573,7 +3250,7 @@ const drawMainUI = () => {
   // Tutorial step 1 timer - give players time to experience overheating
   if (!tutorialComplete && tutorialStep === 1) {
     tutorialStep1Timer++; // Count frames at step 1
-    if (tutorialStep1Timer > 600) { // 10 seconds (60 fps * 10) - reduced for testing
+    if (tutorialStep1Timer > 600) { // 10 seconds (60 fps * 10)
       // If player hasn't overheated after 10 seconds, move to shield tutorial
       tutorialStep = 2; // Skip overheat explanation, go straight to shield tutorial
       catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
@@ -3638,13 +3315,8 @@ const drawMainUI = () => {
   // === BOTTOM RIGHT: Controls hint ===
   x.textAlign = "right";
   setFill("#666666");
-  x.font = "14px 'Poiret One', sans-serif";
-  x.fillText("Press 'ESC' for help • 'M' to toggle audio", w - 20, h - 20);
-  
-  // Testing shortcuts (always visible for development)
-  setFill("#555555");
-  x.font = "12px 'Poiret One', sans-serif";
-  x.fillText("DEV: C-GameOver • T-Tutorial • W-Win", w - 20, h - 40);
+  x.font = `14px ${FONTS.body}`;
+  x.fillText(`Press 'ESC' for help • 'M' - Audio: ${audioEnabled ? 'ON' : 'OFF'}`, w - 20, h - 20);
   
   x.restore();
 };
@@ -3743,9 +3415,6 @@ function gameLoop() {
   drawParticles();
   drawScoreTexts();
   
-  // Draw foreground vine silhouettes (parallax layers that can cover fireflies and cursor)
-  drawVineSilhouettes('foreground', now);
-  
   // Screen flash effect during cat eye warnings
   if (gameStarted && !gameOver && colorChangesEnabled) {
     const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
@@ -3809,13 +3478,11 @@ const initGame = () => {
         // Screen became large enough - reinitialize systems
         initStars();
         initCatEyes();
-        initVines();
       }
     } else if (!isScreenTooSmall) {
       // Screen is large enough and size changed - update systems
       initStars();
       initCatEyes();
-      initVines();
     }
   };
   
@@ -3829,7 +3496,6 @@ const initGame = () => {
   // Initialize visual systems
   initStars();
   initCatEyes();
-  initVines();
   
   // Set first color change timing
   nextColorChangeTime = 600 + F(r() * 300); // 10-15 seconds initially
@@ -3864,7 +3530,6 @@ const initGame = () => {
   }
   
   // Background music will start on first user interaction (browser requirement)
-  console.log('🎮 Game initialized - audioEnabled:', audioEnabled, 'pageVisible:', pageVisible, 'gameStarted:', gameStarted);
   
   // Start game loop
   gameLoop();

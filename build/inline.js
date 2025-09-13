@@ -9,7 +9,7 @@ const htmlContent = fs.readFileSync('index.html', 'utf8');
 
 // Replace the script tag with inline JavaScript
 const inlinedHtml = htmlContent.replace(
-  /<script src="main\.js"><\/script>/,
+  /<script src=?["\']?main\.js["\']?><\/script>/,
   `<script>${jsContent}</script>`
 );
 
