@@ -346,6 +346,141 @@ const stopBackground = () => {
   stopBgMusic();
 };
 
+// Ominous game over sound - dark and atmospheric like Inscryption
+const playGameOverMelody = () => {
+  if (!audioEnabled || !initAudio()) return;
+  
+  // Dark, unsettling chord progression - minor seconds and tritones
+  // Like the darkness closing in when your light fails
+  const ominousSounds = [
+    // Low rumbling bass - the void approaching
+    { freq: 55, time: 0, duration: 3.0, volume: 0.08, type: 'sawtooth' },
+    
+    // Dissonant high whistle - unsettling
+    { freq: 1760, time: 0.3, duration: 0.8, volume: 0.03, type: 'sine' },
+    
+    // Minor second interval - very tense
+    { freq: 220, time: 0.8, duration: 1.5, volume: 0.06, type: 'triangle' },
+    { freq: 233, time: 0.9, duration: 1.4, volume: 0.05, type: 'triangle' },
+    
+    // Descending chromatic notes - darkness falling
+    { freq: 392, time: 1.5, duration: 0.7, volume: 0.04, type: 'sine' },
+    { freq: 370, time: 2.0, duration: 0.8, volume: 0.04, type: 'sine' },
+    { freq: 349, time: 2.5, duration: 1.0, volume: 0.03, type: 'sine' }
+  ];
+  
+  ominousSounds.forEach(({ freq, time, duration, volume, type }) => {
+    setTimeout(() => {
+      if (!audioEnabled) return;
+      
+      const osc = a.createOscillator();
+      const gain = a.createGain();
+      const filter = a.createBiquadFilter();
+      
+      osc.type = type;
+      osc.frequency.value = freq;
+      
+      // Different filtering for different frequency ranges
+      filter.type = 'lowpass';
+      if (freq < 100) {
+        // Bass rumble - very low pass
+        filter.frequency.value = 150;
+        filter.Q.value = 2;
+      } else if (freq > 1000) {
+        // High whistle - band pass for eeriness
+        filter.type = 'bandpass';
+        filter.frequency.value = freq;
+        filter.Q.value = 5;
+      } else {
+        // Mid range - slight low pass for darkness
+        filter.frequency.value = 400;
+        filter.Q.value = 0.8;
+      }
+      
+      // Atmospheric envelope - slow rise, haunting sustain
+      const now = a.currentTime;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(volume, now + 0.3); // Slow, ominous rise
+      gain.gain.setValueAtTime(volume, now + duration * 0.7); // Hold the tension
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration); // Fade into darkness
+      
+      osc.connect(filter).connect(gain).connect(a.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+      
+    }, time * 1000);
+  });
+};
+
+// Dawn breaking victory sound - light, hopeful, triumphant
+const playDawnBreaksVictory = () => {
+  if (!audioEnabled || !initAudio()) return;
+  
+  // Multi-layered dawn breaking sound - like sunrise over darkness
+  const dawnSounds = [
+    // Warm bass foundation - the earth awakening
+    { freq: 110, time: 0, duration: 4.0, volume: 0.06, type: 'sine' },
+    { freq: 165, time: 0.2, duration: 3.8, volume: 0.04, type: 'sine' },
+    
+    // Rising major triad - hope emerging
+    { freq: 264, time: 0.5, duration: 1.2, volume: 0.08, type: 'triangle' }, // C4
+    { freq: 330, time: 0.8, duration: 1.2, volume: 0.07, type: 'triangle' }, // E4  
+    { freq: 396, time: 1.1, duration: 1.2, volume: 0.06, type: 'triangle' }, // G4
+    
+    // Ascending melody - light breaking through
+    { freq: 523, time: 1.5, duration: 0.8, volume: 0.09, type: 'sine' }, // C5
+    { freq: 659, time: 2.0, duration: 0.8, volume: 0.08, type: 'sine' }, // E5
+    { freq: 784, time: 2.5, duration: 1.0, volume: 0.07, type: 'sine' }, // G5
+    { freq: 1047, time: 3.0, duration: 1.5, volume: 0.06, type: 'sine' }, // C6 - triumph!
+    
+    // Gentle high sparkles - first rays of sunlight
+    { freq: 1319, time: 3.2, duration: 0.6, volume: 0.03, type: 'sine' },
+    { freq: 1568, time: 3.5, duration: 0.6, volume: 0.02, type: 'sine' },
+    { freq: 2093, time: 3.8, duration: 0.8, volume: 0.02, type: 'sine' }
+  ];
+  
+  dawnSounds.forEach(({ freq, time, duration, volume, type }) => {
+    setTimeout(() => {
+      if (!audioEnabled) return;
+      
+      const osc = a.createOscillator();
+      const gain = a.createGain();
+      const filter = a.createBiquadFilter();
+      
+      osc.type = type;
+      osc.frequency.value = freq;
+      
+      // Warm, golden filtering like sunlight
+      filter.type = 'lowpass';
+      if (freq < 200) {
+        // Warm bass - let the fundamental through
+        filter.frequency.value = 300;
+        filter.Q.value = 0.3;
+      } else if (freq > 1000) {
+        // High sparkles - gentle brightness, not harsh
+        filter.frequency.value = freq * 0.8;
+        filter.Q.value = 0.5;
+      } else {
+        // Mid range - warm and full
+        filter.frequency.value = 1200;
+        filter.Q.value = 0.4;
+      }
+      
+      // Gentle, hopeful envelope - like dawn slowly breaking
+      const now = a.currentTime;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(volume, now + 0.2); // Gradual, hopeful rise
+      gain.gain.setValueAtTime(volume, now + duration * 0.6); // Sustain the joy
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration); // Gentle fade to peace
+      
+      osc.connect(filter).connect(gain).connect(a.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+      
+    }, time * 1000);
+  });
+};
+
 // ===== GAME STATE VARIABLES =====
 
 // Canvas and rendering
@@ -411,7 +546,10 @@ let tutorialStep3Timer = 0; // Track time spent on step 3
 let tutorialStep4Timer = 0; // Track time spent on step 4
 let tutorialMissedShield = false; // Track if player missed a shield during tutorial
 let showHelp = false;
+let helpScrollOffset = 0; // For scrolling help content
 let showTutorialElements = false; // Show ring and count during tutorial only
+let helpOpenTime = 0; // When help menu was opened
+let totalHelpPauseTime = 0; // Total time spent with help menu open
 
 // Game objects
 let particles = [];
@@ -2409,6 +2547,8 @@ const handleMouseDown = (e) => {
   if (isScreenTooSmall) return;
   
   if (showHelp) {
+    // Closing help menu - add to total pause time
+    totalHelpPauseTime += Date.now() - helpOpenTime;
     showHelp = false;
     return;
   }
@@ -2485,10 +2625,25 @@ const handleKeyDown = (e) => {
     return;
   }
   
-  // Close help menu if open (any key)
+  // Handle help menu navigation
   if (showHelp) {
     e.preventDefault();
+    
+    // Scroll controls when help is open
+    if (e.code === "ArrowUp" || e.code === "KeyW") {
+      helpScrollOffset = Math.max(0, helpScrollOffset - 30);
+      return;
+    }
+    if (e.code === "ArrowDown" || e.code === "KeyS") {
+      const maxScroll = window.helpMaxScroll || 400;
+      helpScrollOffset = Math.min(maxScroll, helpScrollOffset + 30);
+      return;
+    }
+    
+    // Close help menu (any other key)
+    totalHelpPauseTime += Date.now() - helpOpenTime;
     showHelp = false;
+    helpScrollOffset = 0; // Reset scroll when closing
     return;
   }
   
@@ -2522,6 +2677,13 @@ const handleKeyDown = (e) => {
   // Toggle help
   if (e.code === "Escape") {
     e.preventDefault();
+    if (showHelp) {
+      // Closing help menu - add to total pause time
+      totalHelpPauseTime += Date.now() - helpOpenTime;
+    } else {
+      // Opening help menu - record start time
+      helpOpenTime = Date.now();
+    }
     showHelp = !showHelp;
     return;
   }
@@ -2614,6 +2776,19 @@ const handleKeyUp = (e) => {
     spacePressed = false;
     hasPlayedChime = false; // Reset for next activation
   }
+};
+
+// Handle mouse wheel for help menu scrolling
+const handleWheel = (e) => {
+  // Only handle wheel events when help menu is open
+  if (!showHelp) return;
+  
+  e.preventDefault();
+  
+  // Scroll the help content
+  const scrollAmount = e.deltaY > 0 ? 30 : -30;
+  const maxScroll = window.helpMaxScroll || 400;
+  helpScrollOffset = Math.max(0, Math.min(maxScroll, helpScrollOffset + scrollAmount));
 };
 
 // Utility functions for input handling
@@ -2743,6 +2918,8 @@ const restartGame = () => {
   // Reset timing
   startTime = Date.now();
   runStartTime = Date.now();
+  totalHelpPauseTime = 0; // Reset help menu pause time
+  helpOpenTime = 0;
   lastSpawnTime = Date.now(); // Reset spawn timer
   
   // Spawn initial fireflies - more generous starting counts
@@ -3018,34 +3195,75 @@ const drawHelp = () => {
     "- Watch for The Cat's eyes - it grows restless..."
   ];
   
+  // Create clipping region for scrollable content
+  x.save();
+  const contentTop = h * 0.1 + 60;
+  const contentHeight = h - contentTop - 100; // Leave space for close instruction
+  x.beginPath();
+  // Add padding only at top to prevent partial text rendering, keep bottom boundary strict
+  x.rect(0, contentTop - 15, w, contentHeight + 15);
+  x.clip();
+  
   rules.forEach((rule, i) => {
-    const y = (h * 0.1 + 50) + i * 24; // Moved up to align with new title position
-    if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
-      // Uppercase subtitles - teal glowy, centered
-      x.textAlign = "center";
-      setFill("#69e4de");
-      x.shadowColor = "#69e4de";
-      x.shadowBlur = 10;
-      x.font = "bold 20px 'Poiret One', sans-serif";
-      x.fillText(rule, w / 2, y);
-    } else if (rule.startsWith("- ")) {
-      // Bullet points with dashes
-      x.textAlign = "center";
-      setFill("#ffffff");
-      x.shadowColor = "#ffffff";
-      x.shadowBlur = 8;
-      x.font = "15px 'Poiret One', sans-serif";
-      x.fillText(rule, w / 2, y);
-    } else if (rule !== "") {
-      // Regular text - centered
-      x.textAlign = "center";
-      setFill("#e0e0e0");
-      x.shadowBlur = 0;
-      x.font = "20px 'Poiret One', sans-serif";
-      x.fillText(rule, w / 2, y);
+    const y = contentTop + i * 24 - helpScrollOffset; // Apply scroll offset
+    
+    // Only render lines that are visible in the clipped area
+    if (y > contentTop - 30 && y < contentTop + contentHeight + 30) {
+      if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
+        // Uppercase subtitles - teal glowy, centered
+        x.textAlign = "center";
+        setFill("#69e4de");
+        x.shadowColor = "#69e4de";
+        x.shadowBlur = 10;
+        x.font = "bold 20px 'Poiret One', sans-serif";
+        x.fillText(rule, w / 2, y);
+      } else if (rule.startsWith("- ")) {
+        // Bullet points with dashes
+        x.textAlign = "center";
+        setFill("#ffffff");
+        x.shadowColor = "#ffffff";
+        x.shadowBlur = 8;
+        x.font = "15px 'Poiret One', sans-serif";
+        x.fillText(rule, w / 2, y);
+      } else if (rule !== "") {
+        // Regular text - centered
+        x.textAlign = "center";
+        setFill("#e0e0e0");
+        x.shadowBlur = 0;
+        x.font = "20px 'Poiret One', sans-serif";
+        x.fillText(rule, w / 2, y);
+      }
+      x.shadowBlur = 0; // Reset shadow after each line
     }
-    x.shadowBlur = 0; // Reset shadow after each line
   });
+  
+  x.restore(); // Restore clipping
+  
+  // Scroll indicators and instructions
+  const totalContentHeight = rules.length * 24;
+  const maxScroll = Math.max(0, totalContentHeight - contentHeight + 50);
+  
+  // Update max scroll based on actual content
+  if (maxScroll !== 400) {
+    // Store the proper max scroll for wheel handler
+    window.helpMaxScroll = maxScroll;
+  }
+  
+  // Show scroll indicators if content is scrollable
+  if (maxScroll > 0) {
+    x.textAlign = "center";
+    setFill("#69e4de");
+    x.shadowColor = "#69e4de";
+    x.shadowBlur = 8;
+    x.font = "14px 'Poiret One', sans-serif";
+    
+    if (helpScrollOffset > 0) {
+      x.fillText("↑ Scroll up (Arrow keys/Mouse wheel)", w / 2, contentTop - 10);
+    }
+    if (helpScrollOffset < maxScroll) {
+      x.fillText("↓ Scroll down (Arrow keys/Mouse wheel)", w / 2, contentTop + contentHeight + 20);
+    }
+  }
   
   // "Press or click" text - centered and teal glowy
   x.textAlign = "center";
@@ -3053,7 +3271,7 @@ const drawHelp = () => {
   x.shadowColor = "#4dd0e1";
   x.shadowBlur = 10;
   x.font = "bold 20px 'Poiret One', sans-serif";
-  x.fillText("Press or click to close", w / 2, 230 + rules.length * 24 + 40);
+  x.fillText("Press ESC or click to close", w / 2, h - 40);
   x.shadowBlur = 0;
   
   x.restore();
@@ -3229,7 +3447,12 @@ const drawMainUI = () => {
   
   // === TOP RIGHT: Time ===
   if (startTime && !gameOver && !gameWon) {
-    const elapsed = Date.now() - startTime;
+    // Calculate elapsed time, excluding time spent in help menu
+    let elapsed = Date.now() - startTime - totalHelpPauseTime;
+    // If help menu is currently open, subtract that time too
+    if (showHelp) {
+      elapsed -= (Date.now() - helpOpenTime);
+    }
     const remaining = Math.max(0, NIGHT_DURATION - elapsed);
     const minutes = Math.floor(remaining / 60000);
     const seconds = Math.floor((remaining % 60000) / 1000);
@@ -3380,8 +3603,8 @@ function gameLoop() {
   
   const { x: playerX, y: playerY } = getPlayerPosition();
   
-  // Only update game systems when game is active (not over or won) AND screen is adequate
-  if (!gameOver && !gameWon && !isScreenTooSmall) {
+  // Only update game systems when game is active (not over or won) AND screen is adequate AND help menu is closed
+  if (!gameOver && !gameWon && !isScreenTooSmall && !showHelp) {
     // Update all game systems
     updateCatEyes(now);
     updatePlayer(now);
@@ -3400,7 +3623,7 @@ function gameLoop() {
     if (!gameWon && !gameOver && startTime && (Date.now() - startTime >= NIGHT_DURATION)) {
       gameWon = true;
       addScoreText('YOU SURVIVED THE NIGHT!', w / 2, h / 2, '#ffdd00', 600);
-      playTone(800, 1.0, 0.3); // Victory sound
+      playDawnBreaksVictory(); // Dawn breaking victory melody
       fadeBgMusic(0.25, 2); // Boost music volume for celebration
     }
     
@@ -3409,7 +3632,7 @@ function gameLoop() {
       gameOver = true;
       gameOverTime = Date.now(); // Capture the exact moment of game over
       addScoreText('Game Over!', w / 2, h / 2, '#ff4444', 300);
-      playTone(200, 1.0, 0.2); // Game over sound
+      playGameOverMelody(); // Calming reward melody instead of harsh tone
       fadeBgMusic(0.03, 3); // Fade music to very low volume over 3 seconds
     }
     
@@ -3567,6 +3790,7 @@ const initGame = () => {
   
   document.addEventListener('keydown', handleKeyDown);
   document.addEventListener('keyup', handleKeyUp);
+  document.addEventListener('wheel', handleWheel, { passive: false });
   
   // Page visibility handling for performance + audio
   document.addEventListener('visibilitychange', () => {
