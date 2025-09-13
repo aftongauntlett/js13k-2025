@@ -1,49 +1,47 @@
-# ✨ The Luminid & The Cat ✨
+# ✨ Nyx Felis and Lampyris ✨
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![js13k](https://img.shields.io/badge/js13k-2025-orange.svg)](https://js13kgames.com/)
 [![Size](https://img.shields.io/badge/size-<13KB-brightgreen.svg)](#)
-
-> The Luminid gathered fireflies whose glow matched the Cat's eyes; the Cat's eyes, in turn, changed as if to test the Luminid's wit. Was the Cat setting the challenge, or was it following the Luminid's lead? Neither seemed certain, and neither seemed to mind. All that was known, and only at night, was that the two would meet again, and the colors would change, and the game would go on until the moon grew tired of watching.
+[![Commits](https://img.shields.io/github/commit-activity/t/aftongauntlett/js13k-2025?style=flat&logo=git&logoColor=white&label=commits&color=blue)](https://github.com/aftongauntlett/js13k-2025/commits)
 
 ## Game Overview
 
-You are the Luminid, a wanderer of nightlight. Drift through the dark meadow, where fireflies shimmer with the same hue as the Cat’s ever-watchful eyes. Draw them close with your glow, then offer them to the Cat above to renew your fading mana.
+You are Lampyris, guide of fireflies in the eternal night. Move through the darkness to collect fireflies and deliver them to Nyx Felis in the Sky to sustain the night.
 
-But be wary - when the Cat’s gaze begins to change, the bond with your gathered fireflies grows fragile. A single shift could scatter them back to the shadows. Call upon your shield to protect what you’ve gathered, or summon new fireflies from the night itself, at the cost of your own mana.
+When Nyx's eyes begin to shift and change colors, your gathered fireflies are in danger. Use your protective shield with perfect timing to save them, or summon new fireflies from the night itself - but both cost precious bioluminescence.
 
-The challenge is endless, as long as the Cat watches and the fireflies answer.
+Survive until dawn (10 minutes) by mastering shield timing, managing your energy, and building delivery streaks for bonus points.
 
 ## Controls
 
-- **Mouse Movement**: Guide your firefly form around the night
-- **Tap: Left-Click / Spacebar**: Unleash a quick burst of shield (uses mana)
-- **Hold: Left-Click / Spacebar**: Sustain your shield, draining mana as long as it’s active
-- **H Key**: Show or hide the help overlay
+- **Mouse Movement**: Guide Lampyris and collect fireflies
+- **Tap (Click/Spacebar)**: Summon fireflies (costs bioluminescence)
+- **Hold (Click/Spacebar)**: Activate protective shield (costs bioluminescence)
+- **ESC**: Show/hide help menu
+- **M**: Toggle audio on/off
 
-## Gameplay Mechanics
+## Key Features
 
-### Core Loop
-1. **Collect** fireflies by drawing near them
-2. **Watch** The Cat’s eyes for shifting colors - danger is near
-3. **Shield** during shifts to protect your gathered fireflies
-4. **Deliver** fireflies to the Cat to score points and restore mana
+- **Perfect Timing System**: PERFECT timing (white flash) protects ALL fireflies, good timing saves most
+- **Dynamic Difficulty**: Nyx's gaze shifts become quicker and more unpredictable over time
+- **Bioluminescence Management**: Balance energy between summoning fireflies and shield protection
+- **Delivery Streaks**: Chain consecutive deliveries for bonus points
+- **Heat System**: Overuse of magic temporarily overheats your abilities
 
-### Strategic Elements
-- **Mana Management**: Every shield drains mana; every offering restores it
-- **Timing**: Well-timed shields during eye shifts maximize survival
-- **Risk vs Reward**: Carry more fireflies for bigger scores - but greater loss if unguarded
+## Objective
 
-### Special Features
-- **Dynamic Difficulty**: The Cat’s gaze grows quicker and more unpredictable over time
-- **Mana Fireflies**: Golden fireflies appear in moments of low mana
-- **Heat System**: Overusing shields or summons overheats your power, leaving you briefly exposed
+- **Collect & Deliver**: Gather fireflies and deliver them to Nyx Felis in the Sky
+- **Survive Until Dawn**: Last the full 10 minutes until sunrise
+- **Perfect Shield Timing**: Master the timing for maximum firefly protection
+- **Build Streaks**: Chain deliveries for bonus points
 
 ## Technical Details
 
 - **Engine**: Vanilla JavaScript with Canvas 2D
 - **Size**: Optimized for js13k competition (<13KB zipped)
 - **Performance**: 60fps gameplay with efficient rendering
+- **Audio**: Dynamic sound effects and ambient background music
 
 ## Development
 
@@ -65,4 +63,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 *Entry for js13k Games 2025 Competition - Built with ✨ by [Afton Gauntlett](https://github.com/aftongauntlett)*
-
