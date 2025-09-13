@@ -1,7 +1,7 @@
 {
-  "name": "js13k-2025-firefly-cat",
+  "name": "js13k-2025",
   "version": "1.0.0",
-  "description": "A magical firefly collection game for JS13K 2025",
+  "description": "Nyx Felis and Lampyris - A mystical firefly game for JS13K 2025",
   "main": "dist/index.html",
   "scripts": {
     "start": "python3 -m http.server 8000",
@@ -24,7 +24,7 @@
     "javascript",
     "canvas"
   ],
-  "author": "Your Name",
+  "author": "Afton Gauntlett",
   "license": "MIT",
   "dependencies": {
     "acorn": "^8.15.0",

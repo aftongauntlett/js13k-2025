@@ -27,8 +27,6 @@ const FONTS = {
 // Font helper functions
 const setFont = (size, type = 'body') => x.font = `${size}px ${FONTS[type]}`;
 const setTitleFont = (size) => setFont(size, 'title');
-const setBodyFont = (size) => setFont(size, 'body');
-const setMonoFont = (size) => setFont(size, 'mono');
 
 // ===== UTILITY FUNCTIONS =====
 
