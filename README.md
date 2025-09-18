@@ -56,6 +56,20 @@ npm start
 npm run build
 ```
 
+## Repository Information
+
+This repository contains both the original JS13k 2025 competition submission and ongoing improvements:
+
+- **Original Submission**: Tagged as `submission-2025` - the exact code submitted to the JS13k competition
+- **Ongoing Development**: The `main` branch contains post-jam improvements, fixes, and new features
+- **Competition Entry**: This was an official entry in the [js13k Games 2025 Competition](https://js13kgames.com/)
+
+## Post-Mortem
+
+For detailed insights into the development process, challenges faced, and lessons learned during the JS13k 2025 competition, read the full post-mortem:
+
+**[🔗 JS13k 2025 Post-Mortem](https://aftongauntlett.com/js13k-2025-post-mortem)**
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
