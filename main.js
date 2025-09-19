@@ -1266,14 +1266,29 @@ const handleColorChange = (now) => {
     const firefliesEaten = Math.ceil(freeFireflies.length * 0.5); // Only eat 50% of free fireflies
     const firefliesSaved = freeFireflies.length - firefliesEaten;
     
-    // Remove eaten fireflies
+    // Make eaten fireflies flee like scared insects to screen edges
     for (let i = 0; i < firefliesEaten && freeFireflies.length > 0; i++) {
       const randomIndex = Math.floor(Math.random() * freeFireflies.length);
       const firefly = freeFireflies.splice(randomIndex, 1)[0];
-      const fireflyIndex = otherFireflies.indexOf(firefly);
-      if (fireflyIndex > -1) {
-        otherFireflies.splice(fireflyIndex, 1);
-      }
+      
+      // Apply escape animation to free fireflies too
+      firefly.dyingAnimation = true;
+      firefly.deathTimer = 0;
+      firefly.deathMaxTime = 180; // 3 seconds to escape off screen
+      
+      // Scared fireflies flee upward toward the sky (same as captured fireflies)
+      let escapeAngle = -Math.PI/2; // Primarily upward
+      
+      // Add some randomness to escape direction (scared, erratic flight)
+      escapeAngle += (r() - 0.5) * 1.0; // Allow some spread but mostly upward
+      
+      // Fast panic flight speed - much faster than normal firefly movement
+      const panicSpeed = 4 + r() * 3; // 4-7 pixels per frame
+      firefly.vx = Math.cos(escapeAngle) * panicSpeed;
+      firefly.vy = Math.sin(escapeAngle) * panicSpeed;
+      
+      // Add particle trail effect for fleeing fireflies
+      createDeathEffect(firefly);
     }
     
     totalLost += firefliesEaten;
@@ -1457,6 +1472,27 @@ const releaseCapturedFireflies = (count) => {
   otherFireflies.forEach(f => {
     if (f.captured && released < count) {
       f.captured = false;
+      f.captureOffset = null;
+      
+      // Make killed fireflies flee like scared insects to screen edges
+      f.dyingAnimation = true;
+      f.deathTimer = 0;
+      f.deathMaxTime = 180; // 3 seconds to escape off screen
+      
+      // Scared fireflies flee upward toward the sky (makes thematic sense)
+      let escapeAngle = -Math.PI/2; // Primarily upward
+      
+      // Add some randomness to escape direction (scared, erratic flight)
+      escapeAngle += (r() - 0.5) * 1.0; // Allow some spread but mostly upward
+      
+      // Fast panic flight speed - much faster than normal firefly movement
+      const panicSpeed = 4 + r() * 3; // 4-7 pixels per frame
+      f.vx = Math.cos(escapeAngle) * panicSpeed;
+      f.vy = Math.sin(escapeAngle) * panicSpeed;
+      
+      // Add particle trail effect for dying fireflies
+      createDeathEffect(f);
+      
       released++;
     }
   });
@@ -1577,21 +1613,48 @@ const spawnFirefly = () => {
     rarity = 'basic';
   }
   
+  // Spawn from edges for dramatic entrance
+  let spawnX, spawnY, entranceVx, entranceVy;
+  const side = Math.floor(r() * 3); // 0=bottom, 1=left, 2=right
+  
+  if (side === 0) { // From bottom
+    spawnX = 50 + r() * (w - 100);
+    spawnY = h + 20; // Start below screen
+    entranceVx = (r() - 0.5) * 2; // Slight horizontal drift
+    entranceVy = -2 - r() * 3; // Move upward into play area
+  } else if (side === 1) { // From left
+    spawnX = -20; // Start left of screen
+    spawnY = h * 0.5 + r() * h * 0.4;
+    entranceVx = 2 + r() * 3; // Move right into play area
+    entranceVy = (r() - 0.5) * 2; // Slight vertical drift
+  } else { // From right
+    spawnX = w + 20; // Start right of screen
+    spawnY = h * 0.5 + r() * h * 0.4;
+    entranceVx = -2 - r() * 3; // Move left into play area
+    entranceVy = (r() - 0.5) * 2; // Slight vertical drift
+  }
+  
   otherFireflies.push({
-    x: r() * w,
-    y: h * 0.5 + r() * h * 0.48, // More vertical space for fireflies (50% to 98% of screen)
+    x: spawnX,
+    y: spawnY,
     captured: false,
     captureOffset: { x: 0, y: 0 },
     floatTimer: r() * TAU,
     flashTimer: r() * TAU,
     roamTarget: null,
     fadeIn: 0, // For smooth spawning
-    glowIntensity: 0.5 + r() * 0.5,
+    glowIntensity: 1.5 + r() * 0.5, // Start with stronger glow for new arrivals
     size: type === 'royal' ? 3 + r() * 2 : 2 + r() * 2, // Royal fireflies are bigger
     type: type,
     color: color,
     points: points,
-    rarity: rarity
+    rarity: rarity,
+    // Entrance animation properties
+    spawningAnimation: true,
+    spawnTimer: 0,
+    spawnMaxTime: 120, // 2 seconds to fully enter
+    vx: entranceVx,
+    vy: entranceVy
   });
 };
 
@@ -1614,8 +1677,9 @@ const updateFireflies = (playerX, playerY) => {
         randomFirefly.captured = false;
         randomFirefly.captureOffset = null;
         
-        // Give it velocity to fly away quickly
-        const disperseAngle = Math.random() * TAU;
+        // Give it velocity to fly away upward (same as shield fear response)
+        let disperseAngle = -Math.PI/2; // Primarily upward
+        disperseAngle += (Math.random() - 0.5) * 1.0; // Allow some spread but mostly upward
         const disperseSpeed = 5 + Math.random() * 3; // Faster dispersal
         randomFirefly.vx = Math.cos(disperseAngle) * disperseSpeed;
         randomFirefly.vy = Math.sin(disperseAngle) * disperseSpeed;
@@ -1627,11 +1691,109 @@ const updateFireflies = (playerX, playerY) => {
   }
   
   otherFireflies.forEach(firefly => {
+    // Handle dying animation (floating upward off screen)
+    if (firefly.dyingAnimation) {
+      firefly.deathTimer++;
+      firefly.x += firefly.vx;
+      firefly.y += firefly.vy;
+      
+      // Create subtle dust trail - like fairy dust left behind
+      if (firefly.deathTimer % 6 === 0) { // Every 6 frames - less frequent
+        const fadeIntensity = 1 - (firefly.deathTimer / firefly.deathMaxTime);
+        
+        // Create 1-2 dust particles for subtle trail
+        for (let i = 0; i < 1 + Math.floor(r() * 2); i++) {
+          particles.push({
+            x: firefly.x + (r() - 0.5) * 4, // Closer to firefly path
+            y: firefly.y + (r() - 0.5) * 4,
+            vx: -firefly.vx * 0.2 + (r() - 0.5) * 0.8, // Gentle trail behind
+            vy: -firefly.vy * 0.2 + (r() - 0.5) * 0.8,
+            size: 0.2 + r() * 0.4, // Small dust-like particles
+            life: 0,
+            maxLife: 30 + r() * 20, // Medium duration
+            color: firefly.color || "#ffdd99", // Soft warm color
+            glow: true,
+            twinkle: r() * TAU,
+          });
+        }
+      }
+      
+      // Maintain panic speed - scared fireflies don't slow down until they're safe!
+      firefly.vx *= 0.995; // Very minimal slowdown
+      firefly.vy *= 0.995;
+      
+      // Mark for removal when escaped off any screen edge or timer expires
+      const offScreen = firefly.x < -50 || firefly.x > w + 50 || 
+                       firefly.y < -50 || firefly.y > h + 50;
+      if (firefly.deathTimer >= firefly.deathMaxTime || offScreen) {
+        firefly.readyForRemoval = true;
+      }
+      return; // Skip normal updates for dying fireflies
+    }
+    
+    // Handle spawning animation (entering from edges)
+    if (firefly.spawningAnimation) {
+      firefly.spawnTimer++;
+      firefly.x += firefly.vx;
+      firefly.y += firefly.vy;
+      
+      // Create DRAMATIC entrance dust trail - more obvious than fleeing fireflies
+      if (firefly.spawnTimer % 3 === 0) { // Every 3 frames - more frequent than escape trails
+        const trailIntensity = (firefly.spawnMaxTime - firefly.spawnTimer) / firefly.spawnMaxTime;
+        
+        // Create more particles for obvious arrival effect
+        for (let i = 0; i < 2 + Math.floor(r() * 3); i++) {
+          particles.push({
+            x: firefly.x + (r() - 0.5) * 6,
+            y: firefly.y + (r() - 0.5) * 6,
+            vx: -firefly.vx * 0.3 + (r() - 0.5) * 1.2, // Trail behind movement
+            vy: -firefly.vy * 0.3 + (r() - 0.5) * 1.2,
+            size: 0.4 + r() * 0.8, // Larger particles for more visibility
+            life: 0,
+            maxLife: 40 + r() * 30, // Longer duration
+            color: firefly.color || "#88ffaa", // Bright arrival color
+            glow: true,
+            twinkle: r() * TAU,
+          });
+        }
+      }
+      
+      // Gradually slow down entrance velocity
+      firefly.vx *= 0.95;
+      firefly.vy *= 0.95;
+      
+      // Stop spawning animation when in play area or timer expires
+      const inPlayArea = firefly.x > 20 && firefly.x < w - 20 && 
+                        firefly.y > h * 0.4 && firefly.y < h - 20;
+      if (firefly.spawnTimer >= firefly.spawnMaxTime || inPlayArea) {
+        // Create dramatic arrival burst when spawning completes
+        for (let i = 0; i < 8; i++) {
+          const burstAngle = (i / 8) * TAU;
+          particles.push({
+            x: firefly.x,
+            y: firefly.y,
+            vx: Math.cos(burstAngle) * (2 + r() * 2),
+            vy: Math.sin(burstAngle) * (2 + r() * 2),
+            size: 0.5 + r() * 0.5,
+            life: 0,
+            maxLife: 20 + r() * 15,
+            color: firefly.color || "#88ffaa",
+            glow: true,
+            twinkle: r() * TAU,
+          });
+        }
+        
+        firefly.spawningAnimation = false;
+        firefly.vx = undefined;
+        firefly.vy = undefined;
+      }
+    }
+    
     if (firefly.captured) {
       // Captured fireflies orbit around player
       updateCapturedFirefly(firefly, playerX, playerY);
-    } else {
-      // Free fireflies roam and react to player
+    } else if (!firefly.spawningAnimation) {
+      // Free fireflies roam and react to player (only when not spawning)
       updateFreeFirefly(firefly, playerX, playerY, speedMultiplier);
     }
     
@@ -1644,6 +1806,9 @@ const updateFireflies = (playerX, playerY) => {
       firefly.newlySpawned--;
     }
   });
+  
+  // Remove fireflies that have completed death animation
+  otherFireflies = otherFireflies.filter(f => !f.readyForRemoval);
 };
 
 // Update behavior for captured fireflies
@@ -1785,7 +1950,19 @@ const captureFirefly = (firefly, playerX, playerY) => {
 // Draw all fireflies with their glowing effects
 const drawFireflies = (now) => {
   otherFireflies.forEach(firefly => {
-    const alpha = firefly.fadeIn;
+    let alpha = firefly.fadeIn;
+    
+    // Handle dying animation alpha (fade out as they float away)
+    if (firefly.dyingAnimation) {
+      const deathProgress = firefly.deathTimer / firefly.deathMaxTime;
+      alpha = Math.max(0, 1 - deathProgress * 1.5); // Fade out faster for dramatic effect
+    }
+    // Handle spawning animation alpha (fade in as they enter)
+    else if (firefly.spawningAnimation) {
+      const spawnProgress = firefly.spawnTimer / firefly.spawnMaxTime;
+      alpha = Math.min(1, spawnProgress * 2); // Fade in quickly for visibility
+    }
+    
     if (alpha <= 0) return;
     
     // Natural firefly flashing behavior - they should actually fade out completely sometimes
@@ -1839,6 +2016,18 @@ const drawFireflies = (now) => {
     if (firefly.newlySpawned > 0) {
       const newSpawnBoost = firefly.newlySpawned / 60; // 0 to 1 over 60 frames
       maxGlowRadius += firefly.size * 4 * newSpawnBoost; // Extra glow that fades
+    }
+    
+    // Dramatic glow boost for spawning fireflies to make entrance obvious
+    if (firefly.spawningAnimation) {
+      const spawnGlowBoost = (firefly.spawnMaxTime - firefly.spawnTimer) / firefly.spawnMaxTime;
+      maxGlowRadius += firefly.size * 6 * spawnGlowBoost; // Strong entrance glow
+    }
+    
+    // Fading glow for dying fireflies
+    if (firefly.dyingAnimation) {
+      const deathFade = 1 - (firefly.deathTimer / firefly.deathMaxTime);
+      maxGlowRadius *= (0.5 + deathFade * 0.5); // Diminishing glow as they die
     }
     
     const currentGlowRadius = baseGlowRadius + (maxGlowRadius - baseGlowRadius) * visibility;
@@ -2188,86 +2377,101 @@ const drawPlayerFirefly = (playerX, playerY, now) => {
   }
 };
 
-// Draw circular bioluminescence/shield indicator around player
-const drawPlayerManaRing = (playerX, playerY, now) => {
-  const capturedCount = otherFireflies.filter(f => f.captured).length;
-  const baseRadius = 12 + Math.min(capturedCount * 1.5, 8); // Smaller, more subtle
-  
+const drawPlayerCharacter = (playerX, playerY, now) => {
   x.save();
   
-  // Soft background ring - barely visible
-  setStroke(`rgba(255, 255, 255, 0.1)`);
-  setLineWidth(1);
-  x.beginPath();
-  x.arc(playerX, playerY, baseRadius, 0, TAU);
-  x.stroke();
+  const pulse = sin(now * 0.008) * 0.3 + 0.7; // Natural firefly pulsing
+  const manaPercent = manaEnergy / 100;
   
-  // Bioluminescence indicator as soft floating dots
-  if (manaEnergy > 0) {
-    const dotCount = Math.ceil((manaEnergy / 100) * 8); // 0-8 dots based on mana
-    
-    for (let i = 0; i < dotCount; i++) {
-      const angle = (i / 8) * TAU - Math.PI / 2; // Start from top
-      const dotX = playerX + cos(angle) * baseRadius;
-      const dotY = playerY + sin(angle) * baseRadius;
-      const pulse = sin(now * 0.008 + i * 0.8) * 0.3 + 0.7;
-      
-      // Soft glowing dots using player firefly colors
-      x.shadowColor = "#aaccff";
-      x.shadowBlur = 4;
-      setFill(`rgba(170, 204, 255, ${pulse * 0.6})`);
-      x.beginPath();
-      x.arc(dotX, dotY, 1, 0, TAU);
-      x.fill();
-      x.shadowBlur = 0;
-    }
+  // Firefly glow brightness based on mana level
+  const glowIntensity = Math.max(0.3, manaPercent) * pulse;
+  const glowRadius = 8 + glowIntensity * 6; // 8-14px radius based on mana
+  
+  // Blue firefly colors - vibrant when full mana, dull gray when empty
+  let coreColor, glowColor, outerGlow;
+  if (manaPercent > 0.5) {
+    // High mana - vibrant blue
+    coreColor = `rgba(180, 220, 255, ${glowIntensity})`;
+    glowColor = `rgba(120, 180, 255, ${glowIntensity * 0.8})`;
+    outerGlow = `rgba(80, 140, 220, ${glowIntensity * 0.4})`;
+  } else if (manaPercent > 0.2) {
+    // Medium mana - dimmer blue
+    coreColor = `rgba(140, 180, 220, ${glowIntensity})`;
+    glowColor = `rgba(100, 140, 200, ${glowIntensity * 0.8})`;
+    outerGlow = `rgba(70, 110, 180, ${glowIntensity * 0.4})`;
+  } else {
+    coreColor = `rgba(160, 160, 180, ${glowIntensity})`;
+    glowColor = `rgba(120, 120, 140, ${glowIntensity * 0.8})`;
+    outerGlow = `rgba(80, 80, 100, ${glowIntensity * 0.4})`;
   }
   
-  // Shield indicator - glowing protective cloud
+  // Outer glow (largest) - blue shadow to match firefly
+  x.shadowColor = manaPercent > 0.2 ? "#5090dc" : "#606080";
+  x.shadowBlur = 12;
+  setFill(outerGlow);
+  x.beginPath();
+  x.arc(playerX, playerY, glowRadius, 0, TAU);
+  x.fill();
+  
+  // Middle glow
+  x.shadowBlur = 8;
+  setFill(glowColor);
+  x.beginPath();
+  x.arc(playerX, playerY, glowRadius * 0.6, 0, TAU);
+  x.fill();
+  
+  // Bright core
+  x.shadowBlur = 4;
+  setFill(coreColor);
+  x.beginPath();
+  x.arc(playerX, playerY, glowRadius * 0.3, 0, TAU);
+  x.fill();
+  
+  x.shadowBlur = 0;
+  
+  // Simple shield bubble when active - color changes based on mana level
   if (shieldActive) {
-    const time = now * 0.003;
-    const pulse = sin(time * 2) * 0.2 + 0.8;
+    const shieldPulse = sin(now * 0.01) * 0.2 + 0.8;
+    const shieldRadius = glowRadius + 8; // Just outside the firefly glow
     
-    // Multiple layers of glowing cloud particles
-    for (let layer = 0; layer < 3; layer++) {
-      const layerRadius = 20 + layer * 8;
-      const layerAlpha = (0.4 - layer * 0.1) * pulse;
-      const particleCount = 12 - layer * 2;
-      
-      for (let i = 0; i < particleCount; i++) {
-        const angle = (i / particleCount) * TAU + time * (1 + layer * 0.3);
-        const radius = layerRadius + sin(time * 3 + i + layer) * 4;
-        const particleX = playerX + cos(angle) * radius;
-        const particleY = playerY + sin(angle) * radius;
-        const size = 4 + layer * 2 + sin(time * 4 + i) * 1;
-        
-        // Whitish-purple glowing particles
-        x.shadowColor = layer === 0 ? '#ffffff' : '#dd99ff';
-        x.shadowBlur = 8 + layer * 4;
-        const color = layer === 0 ? `rgba(255, 255, 255, ${layerAlpha})` : 
-                     layer === 1 ? `rgba(220, 180, 255, ${layerAlpha})` :
-                                   `rgba(180, 120, 255, ${layerAlpha})`;
-        setFill(color);
-        x.beginPath();
-        x.arc(particleX, particleY, size, 0, TAU);
-        x.fill();
-        x.shadowBlur = 0;
-      }
+    // Shield color based on mana level
+    let shieldStrokeColor, shieldFillColor, shieldShadowColor;
+    if (manaPercent > 0.2) {
+      // High mana - blue/cyan
+      shieldStrokeColor = `rgba(102, 204, 255, ${shieldPulse * 0.6})`;
+      shieldFillColor = `rgba(150, 220, 255, ${shieldPulse * 0.1})`;
+      shieldShadowColor = "#66ccff";
+    } else if (manaPercent > 0.05) {
+      // Medium mana (5-20%) - orange warning
+      shieldStrokeColor = `rgba(255, 153, 102, ${shieldPulse * 0.6})`;
+      shieldFillColor = `rgba(255, 200, 150, ${shieldPulse * 0.1})`;
+      shieldShadowColor = "#ff9966";
+    } else {
+      // Critical mana (<5%) - red danger
+      shieldStrokeColor = `rgba(255, 102, 102, ${shieldPulse * 0.6})`;
+      shieldFillColor = `rgba(255, 150, 150, ${shieldPulse * 0.1})`;
+      shieldShadowColor = "#ff6666";
     }
     
-    // Bright central glow
-    const gradient = x.createRadialGradient(playerX, playerY, 0, playerX, playerY, 25);
-    gradient.addColorStop(0, `rgba(255, 255, 255, ${pulse * 0.6})`);
-    gradient.addColorStop(0.5, `rgba(220, 180, 255, ${pulse * 0.3})`);
-    gradient.addColorStop(1, "transparent");
-    setFill(gradient);
+    x.shadowColor = shieldShadowColor;
+    x.shadowBlur = 6;
+    setStroke(shieldStrokeColor);
+    setLineWidth(2);
     x.beginPath();
-    x.arc(playerX, playerY, 25, 0, TAU);
+    x.arc(playerX, playerY, shieldRadius, 0, TAU);
+    x.stroke();
+    x.shadowBlur = 0;
+    
+    setFill(shieldFillColor);
+    x.beginPath();
+    x.arc(playerX, playerY, shieldRadius, 0, TAU);
     x.fill();
   }
   
   x.restore();
 };
+  
+
 
 // ===== PARTICLES & EFFECTS SYSTEM =====
 
@@ -2376,6 +2580,27 @@ const createDispersalEffect = (firefly) => {
       color: "#ff6666",
       alpha: 0.7,
       glow: true,
+    });
+  }
+};
+
+// Create escape effect for fireflies fleeing from Nyx
+const createDeathEffect = (firefly) => {
+  // Initial dust puff - subtle panic effect
+  for (let i = 0; i < 5; i++) {
+    const spreadAngle = r() * TAU; // All directions for dust puff
+    const speed = 0.5 + r() * 1.2;
+    particles.push({
+      x: firefly.x + (r() - 0.5) * 2,
+      y: firefly.y + (r() - 0.5) * 2,
+      vx: Math.cos(spreadAngle) * speed,
+      vy: Math.sin(spreadAngle) * speed,
+      size: 0.3 + r() * 0.4, // Small dust particles
+      life: 0,
+      maxLife: 35 + r() * 25, // Moderate duration
+      color: firefly.color || "#ffdd99", // Soft warm dust color
+      glow: true,
+      twinkle: r() * TAU,
     });
   }
 };
@@ -2726,8 +2951,8 @@ const handleWheel = (e) => {
 };
 
 // Utility functions for input handling
-const canSummon = () => manaEnergy >= 10;
-const canShield = () => manaEnergy > 0 && shieldCooldown === 0 && !summonOverheated;
+const canSummon = () => manaEnergy >= 8;
+const canShield = () => manaEnergy >= 5 && shieldCooldown === 0 && !summonOverheated;
 
 const summonFirefly = () => {
   if (!canSummon()) {
@@ -2735,7 +2960,7 @@ const summonFirefly = () => {
   }
   
   // Consume mana
-  manaEnergy = Math.max(0, manaEnergy - 10);
+  manaEnergy = Math.max(0, manaEnergy - 8);
   
   // Only overheat when mana hits 0
   if (manaEnergy === 0 && !summonOverheated) {
@@ -2750,12 +2975,13 @@ const summonFirefly = () => {
       tutorialStep = 1.5; // Move to overheat explanation step
     }
     
-    // Disperse captured fireflies aggressively
+    // Disperse captured fireflies aggressively - scared fireflies flee upward
     otherFireflies.forEach(firefly => {
       if (firefly.captured) {
         firefly.captured = false;
-        // Give them strong dispersal velocity away from player
-        const disperseAngle = Math.atan2(firefly.y - my, firefly.x - mx);
+        // Scared fireflies flee upward toward the sky (same as shield fear response)
+        let disperseAngle = -Math.PI/2; // Primarily upward
+        disperseAngle += (r() - 0.5) * 1.0; // Allow some spread but mostly upward
         const disperseForce = 8 + r() * 4; // Strong dispersal force
         firefly.vx = Math.cos(disperseAngle) * disperseForce;
         firefly.vy = Math.sin(disperseAngle) * disperseForce;
@@ -2776,33 +3002,21 @@ const summonFirefly = () => {
   
   // No automatic tutorial progression here - let overheating or timer handle it
   
-  // Spawn firefly near mouse
-  const spawnX = mx + (r() - 0.5) * 100;
-  const spawnY = my + (r() - 0.5) * 100;
+  // Spawn 2-3 fireflies per summon for better value
+  const firefliesPerSummon = 2 + Math.floor(r() * 2); // 2-3 fireflies
+  for (let i = 0; i < firefliesPerSummon; i++) {
+    // Slight delay between spawns for dramatic effect
+    setTimeout(() => spawnFirefly(), i * 200); // 200ms between each spawn
+  }
   
-  otherFireflies.push({
-    x: clamp(spawnX, 50, w - 50),
-    y: clamp(spawnY, h * 0.5, h - 50), // Higher spawn area for more room
-    captured: false,
-    captureOffset: { x: 0, y: 0 },
-    floatTimer: r() * TAU,
-    flashTimer: r() * TAU,
-    roamTarget: null,
-    fadeIn: 0,
-    glowIntensity: 1.5 + r() * 0.5, // Start with stronger glow
-    size: 3 + r() * 2, // Slightly bigger
-    newlySpawned: 60, // Frames to show as "new" with extra effects
-  });
-  
-  createSummonEffect(spawnX, spawnY);
+  createSummonEffect(mx, my); // Visual feedback at mouse position
   playTone(400, 0.15, 0.06); // Back to original tone
   quickFlashPower = 40; // Gentle flash
   screenShake = Math.min(screenShake + 1, 3); // Very subtle shake
 };
 
 const activateShield = (isHoldAction = false) => {
-  if (summonOverheated) {
-    // Record attempt while overheated for UI feedback
+  if (summonOverheated || manaEnergy <= 0) {
     lastOverheatAttempt = Date.now();
     return;
   }
@@ -3459,10 +3673,25 @@ const drawMainUI = () => {
     setFill("#cccccc");
     x.font = `18px ${FONTS.body}`;
     x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
-  } else {
-    setFill("#99ff99");
+  } else if (summonOverheated || manaEnergy < 5) {
+    setFill("#ff6666");
     x.font = `18px ${FONTS.body}`;
-    x.fillText("Shield: Ready", 20, leftY);
+    x.fillText(manaEnergy <= 0 ? "OUT OF MANA" : "LOW MANA", 20, leftY);
+  } else {
+    let shieldColor = "#99ff99";
+    let shieldText = "Shield: Ready";
+    
+    if (manaEnergy <= 20) {
+      shieldColor = "#ff9966";
+      shieldText = "Shield: LOW POWER";
+    } else if (manaEnergy <= 5) {
+      shieldColor = "#ff6666";
+      shieldText = "Shield: CRITICAL";
+    }
+    
+    setFill(shieldColor);
+    x.font = `18px ${FONTS.body}`;
+    x.fillText(shieldText, 20, leftY);
   }
   leftY += 25; // Tighter spacing
   
@@ -3586,18 +3815,6 @@ const drawMainUI = () => {
   }
   
   x.save();
-  
-  // Background swirling particles (behind bar)
-  for (let i = 0; i < 12; i++) {
-    const time = Date.now() * 0.002 + i * 0.5;
-    const swirlX = barX + (barWidth * 0.5) + Math.cos(time) * (barWidth * 0.3) * (1 + i * 0.1);
-    const swirlY = barY + (barHeight * 0.5) + Math.sin(time * 0.7 + i) * (barHeight * 1.5);
-    const alpha = (sin(time * 2 + i) * 0.3 + 0.4) * 0.15;
-    const size = 1 + sin(time * 3 + i) * 0.5;
-    
-    setFill(`rgba(${particleColor.slice(1,3)}, ${particleColor.slice(3,5)}, ${particleColor.slice(5,7)}, ${alpha})`);
-    x.fillRect(swirlX - size/2, swirlY - size/2, size, size);
-  }
   
   // Ethereal background glow with rounded corners
   x.shadowColor = shadowColor;
@@ -3818,40 +4035,9 @@ function gameLoop() {
   drawDeliveryZone(now);
   drawFireflies(now);
   drawPlayerFirefly(playerX, playerY, now);
-  drawPlayerManaRing(playerX, playerY, now);
+  drawPlayerCharacter(playerX, playerY, now);
   
-  // Shield charging visual effect - crackling lightning
-  if (shieldCharging) {
-    const chargeTime = Date.now() - (mouseDownTime || spaceActivationTime);
-    const chargeProgress = Math.min(chargeTime / HOLD_THRESHOLD, 1);
-    
-    x.save();
-    // Multiple crackling lightning bolts around player
-    for (let i = 0; i < 6; i++) {
-      const angle = (i / 6) * TAU + chargeTime * 0.01;
-      const radius = 20 + sin(chargeTime * 0.02 + i) * 5;
-      const startX = playerX + cos(angle) * radius;
-      const startY = playerY + sin(angle) * radius;
-      const endX = playerX + cos(angle) * (radius + 15);
-      const endY = playerY + sin(angle) * (radius + 15);
-      
-      // Crackling lightning effect
-      setStroke(`rgba(200, 220, 255, ${0.7 + sin(chargeTime * 0.03 + i) * 0.3})`);
-      setLineWidth(2);
-      x.beginPath();
-      x.moveTo(startX, startY);
-      // Jagged lightning path
-      const segments = 3;
-      for (let j = 1; j <= segments; j++) {
-        const t = j / segments;
-        const midX = startX + (endX - startX) * t + (sin(chargeTime * 0.05 + i + j) * 8);
-        const midY = startY + (endY - startY) * t + (cos(chargeTime * 0.04 + i + j) * 8);
-        x.lineTo(midX, midY);
-      }
-      x.stroke();
-    }
-    x.restore();
-  }
+
   
   drawParticles();
   drawScoreTexts();
@@ -4020,8 +4206,8 @@ const initGame = () => {
     }
   });
   
-  // Spawn initial fireflies
-  const initialFireflies = tutorialComplete ? 20 : 8;
+  // Spawn initial fireflies - increased for better game feel
+  const initialFireflies = tutorialComplete ? 25 : 12;
   for (let i = 0; i < initialFireflies; i++) {
     spawnFirefly();
   }
