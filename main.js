@@ -576,6 +576,7 @@ let gameOverTime = null; // Stores the time when game ended for frozen display
 let totalCollected = 0, totalLost = 0;
 let deliveryStreak = 0, bestStreak = 0; // New streak tracking
 let startTime = null, runStartTime = null;
+let shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
 let audioEnabled = true, pageVisible = true;
 let lastSpawnTime = 0; // For progressive difficulty spawning
 
@@ -1301,15 +1302,17 @@ const handleColorChange = (now) => {
 
 // Shield protection with timing-based effectiveness
 const handleShieldProtection = (capturedFireflies, now) => {
-  const warningPhase = nextColorChangeTime - catEyeChangeTimer;
+  const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+  const flashPhase = CFG.warnFrames - timeUntilChange; // This counts UP from 0 to 240
   let protectionRate, timingQuality;
   
-  // Timing-based shield effectiveness with tighter perfect window
-  if (warningPhase >= CFG.flash2 + 5 && warningPhase <= CFG.flash2 + 15) {
-    // Perfect shield: 10-frame window (0.16 seconds) - protects ALL fireflies!
+  // Timing-based shield effectiveness - use flashPhase that counts UP like visual system
+  // PERFECT: Right after 2nd flash ends (predictable timing)
+  if (flashPhase >= CFG.flash2 + 20 && flashPhase <= CFG.flash2 + 35) {
+    // Perfect shield: 15-frame window right after 2nd flash ends (180-195)
+    // Player can count: Flash 1... Flash 2... [shield NOW!]
     protectionRate = 1.0;
     timingQuality = "PERFECT";
-    
     // PERFECT SHIELD: Protect ALL fireflies on screen, not just captured ones
     otherFireflies.forEach(firefly => {
       if (!firefly.captured) {
@@ -1319,34 +1322,33 @@ const handleShieldProtection = (capturedFireflies, now) => {
     
     // PERFECT feedback effects
     shieldPerfectFlash = 60; // 1 second white flash
-    addScoreText('PERFECT TIMING!', w / 2, h / 2 - 100, '#ffffff', 300);
     playTone(800, 0.3, 0.05); // High rewarding tone
+    shieldStats.perfect++;
     
-  } else if (warningPhase >= CFG.flash1 && warningPhase <= CFG.flash2) {
-    protectionRate = 0.95; // Great timing - 95% protection (was 85%)
+  } else if (flashPhase >= CFG.flash2 && flashPhase <= CFG.flash3 + 10) {
+    // GREAT: During 2nd flash through early 3rd flash (160-210)
+    protectionRate = 0.95; // Great timing - 95% protection
     timingQuality = "GREAT";
-    
     // GREAT feedback effects
     shieldSuccessFlash = 30; // Brief blue flash
-    addScoreText('GREAT TIMING!', w / 2, h / 2 - 80, '#66ccff', 240);
     playTone(600, 0.2, 0.08); // Success tone
+    shieldStats.great++;
     
-  } else if (warningPhase >= CFG.flash3 && warningPhase <= CFG.warnFrames) {
-    protectionRate = 0.85; // Good timing - 85% protection (was 70%)
+  } else if (flashPhase >= CFG.flash1 && flashPhase <= CFG.warnFrames) {
+    // GOOD: From 1st flash to end (80-240) - forgiving for learning
+    protectionRate = 0.85; // Good timing - 85% protection
     timingQuality = "GOOD";
-    
     // Minor success feedback
     shieldSuccessFlash = 15; // Very brief flash
-    addScoreText('GOOD TIMING', w / 2, h / 2 - 60, '#99ff99', 180);
     playTone(500, 0.15, 0.1); // Softer tone
+    shieldStats.good++;
     
   } else {
     protectionRate = 0.5; // Poor timing - only 50% protection
     timingQuality = "MISSED";
-    
     // Missed timing feedback
-    addScoreText('MISSED!', w / 2, h / 2 - 80, '#ff9999', 300);
     playTone(300, 0.3, 0.12); // Lower disappointed tone
+    shieldStats.missed++;
   }
   
   const firefliesLost = F(capturedFireflies.length * (1 - protectionRate));
@@ -1368,8 +1370,19 @@ const handleShieldProtection = (capturedFireflies, now) => {
   const soundFreqs = { "PERFECT": 300, "GREAT": 250, "GOOD": 200, "LATE": 180 };
   playTone(soundFreqs[timingQuality], 0.2, 0.12);
   
-  // Visual feedback handled by timing messages
+  // Clear old feedback first, then add new feedback
   clearShieldFeedback();
+  
+  // Add visual feedback after clearing old messages - match "NO SHIELD!" formatting exactly
+  if (timingQuality === "PERFECT") {
+    addScoreText('PERFECT SHIELD!', w / 2, h / 2 - 80, '#ffffff', 300);
+  } else if (timingQuality === "GREAT") {
+    addScoreText('GREAT SHIELD!', w / 2, h / 2 - 80, '#66ccff', 300);
+  } else if (timingQuality === "GOOD") {
+    addScoreText('GOOD SHIELD!', w / 2, h / 2 - 80, '#99ff99', 300);
+  } else if (timingQuality === "MISSED") {
+    addScoreText('MISSED SHIELD!', w / 2, h / 2 - 80, '#ff9999', 300);
+  }
   
   // Tutorial progression - advance after successful shield use
   if (!tutorialComplete && tutorialStep === 2 && firefliesProtected > 0) {
@@ -1548,7 +1561,7 @@ const drawScoreTexts = () => {
     
     // Different font sizes for different types of messages
     const isShortNumeric = /^[+\-]\d+$/.test(text.text.trim()) || /^\+\d+\s+PERFECT!$/.test(text.text);
-    const isTimingMessage = text.text.includes('TIMING') || text.text.includes('PERFECT') || text.text.includes('SUCCESS') || text.text.includes('NO SHIELD') || text.text.includes('MISSED');
+    const isTimingMessage = text.text.includes('TIMING') || text.text.includes('PERFECT') || text.text.includes('SUCCESS') || text.text.includes('SHIELD') || text.text.includes('MISSED');
     
     let fontSize;
     if (isShortNumeric) {
@@ -3016,10 +3029,13 @@ const summonFirefly = () => {
 };
 
 const activateShield = (isHoldAction = false) => {
-  if (summonOverheated || manaEnergy <= 0) {
+  if (summonOverheated || manaEnergy < 5) {
     lastOverheatAttempt = Date.now();
     return;
   }
+  
+  // Consume mana when shield is activated
+  manaEnergy = Math.max(0, manaEnergy - 5);
   
   shieldActive = true;
   lastShieldTime = Date.now();
@@ -3044,6 +3060,7 @@ const restartGame = () => {
   totalLost = 0;
   deliveryStreak = 0;
   bestStreak = 0;
+  shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
   glowPower = 0;
   charging = false;
   mouseMoving = false;
@@ -3564,7 +3581,82 @@ const drawGameOverScreen = () => {
   
   setFill("#66aaff");
   x.fillText(`Time Survived: ${timeString}`, w / 2, currentY);
-  currentY += 60;
+  currentY += 50;
+  
+  // Shield timing statistics
+  const totalShields = shieldStats.perfect + shieldStats.great + shieldStats.good + shieldStats.missed;
+  if (totalShields > 0) {
+    setFill("#ffffff");
+    x.font = `22px ${FONTS.body}`;
+    x.fillText("Shield Timing Performance:", w / 2, currentY);
+    currentY += 35;
+    
+    x.font = `18px ${FONTS.body}`;
+    
+    if (shieldStats.perfect > 0) {
+      setFill("#ffffff");
+      x.fillText(`Perfect: ${shieldStats.perfect}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (shieldStats.great > 0) {
+      setFill("#66ccff");
+      x.fillText(`Great: ${shieldStats.great}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (shieldStats.good > 0) {
+      setFill("#99ff99");
+      x.fillText(`Good: ${shieldStats.good}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (shieldStats.missed > 0) {
+      setFill("#ff9999");
+      x.fillText(`Missed: ${shieldStats.missed}`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    // Calculate accuracy percentage
+    const accurateShields = shieldStats.perfect + shieldStats.great + shieldStats.good;
+    const accuracy = Math.round((accurateShields / totalShields) * 100);
+    
+    setFill("#cccccc");
+    x.font = `16px ${FONTS.body}`;
+    x.fillText(`Accuracy: ${accuracy}% (${accurateShields}/${totalShields})`, w / 2, currentY);
+    currentY += 20;
+    
+    // Performance assessment
+    const perfectRate = Math.round((shieldStats.perfect / totalShields) * 100);
+    let assessment = "";
+    let assessmentColor = "#cccccc";
+    
+    if (perfectRate >= 80) {
+      assessment = "Legendary Guardian!";
+      assessmentColor = "#ffffff";
+    } else if (perfectRate >= 60) {
+      assessment = "Master of Timing";
+      assessmentColor = "#66ccff";
+    } else if (perfectRate >= 40) {
+      assessment = "Skilled Protector";
+      assessmentColor = "#99ff99";
+    } else if (accuracy >= 80) {
+      assessment = "Reliable Shield";
+      assessmentColor = "#ffaa66";
+    } else if (accuracy >= 60) {
+      assessment = "Learning Guardian";
+      assessmentColor = "#ffccaa";
+    }
+    
+    if (assessment) {
+      setFill(assessmentColor);
+      x.font = `14px ${FONTS.body}`;
+      x.fillText(assessment, w / 2, currentY);
+      currentY += 15;
+    }
+    
+    currentY += 20;
+  }
   
   // Final score - use consistent "curiosity" terminology
   if (gameWon) {
@@ -3703,6 +3795,8 @@ const drawMainUI = () => {
     x.fillText(`${deliveryStreak}x streak (+${Math.floor((Math.min(3, 1 + (deliveryStreak - 1) * 0.5) - 1) * 100)}% bonus)`, 20, leftY);
     leftY += 25;
   }
+  
+
   
   // === CENTER: Summoning Feedback ===
   if (summonFeedback.active) {
@@ -4036,8 +4130,6 @@ function gameLoop() {
   drawFireflies(now);
   drawPlayerFirefly(playerX, playerY, now);
   drawPlayerCharacter(playerX, playerY, now);
-  
-
   
   drawParticles();
   drawScoreTexts();
