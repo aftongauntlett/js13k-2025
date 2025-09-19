@@ -7,34 +7,46 @@
 
 ## Game Overview
 
-You are Lampyris, guide of fireflies in the eternal night. Move through the darkness to collect fireflies and deliver them to Nyx Felis in the Sky to sustain the night.
+You are **Lampyris**, a mystical guide of fireflies in the eternal night. Your mission: collect fireflies and deliver them to **Nyx Felis** (the great cat) to maintain her curiosity about the night world.
 
-When Nyx's eyes begin to shift and change colors, your gathered fireflies are in danger. Use your protective shield with perfect timing to save them, or summon new fireflies from the night itself - but both cost precious bioluminescence.
+### How to Play
+This is an **addictive clicker game** with a 3-minute survival challenge:
 
-Survive until dawn (10 minutes) by mastering shield timing, managing your energy, and building delivery streaks for bonus points.
+1. **Click rapidly** to summon fireflies (costs mana)
+2. **Move to collect** them around your character  
+3. **Watch the delivery pressure timer** - green bar at bottom shows time until curiosity decay
+4. **Deliver to Nyx** before the timer turns red (15 second deadline)
+5. **Shield timing** - when her eyes flash, activate shield to protect fireflies
+6. **Build delivery streaks** - consecutive deliveries multiply your score, but streaks break on failure!
+
+### Firefly Species & Scoring
+- **Basic Green**: 1 point, slow (safe choice)
+- **Silver**: 2 points, faster 
+- **Golden**: 3 points, fast
+- **Royal Purple**: 5 points, very fast (high risk/reward)
+
+**Victory**: Curiosity above -50 for 3 minutes + 1000 completion bonus + (streak × 50)
 
 ## Controls
 
 - **Mouse Movement**: Guide Lampyris and collect fireflies
-- **Tap (Click/Spacebar)**: Summon fireflies (costs bioluminescence)
-- **Hold (Click/Spacebar)**: Activate protective shield (costs bioluminescence)
+- **Click/Spacebar (Rapid)**: Summon fireflies - click rapidly for more! (costs bioluminescence/mana)
+- **Hold (Click/Spacebar)**: Activate protective shield (costs bioluminescence/mana)
 - **ESC**: Show/hide help menu
 - **M**: Toggle audio on/off
 
-## Key Features
+## Key Mechanics
 
-- **Perfect Timing System**: PERFECT timing (white flash) protects ALL fireflies, good timing saves most
-- **Dynamic Difficulty**: Nyx's gaze shifts become quicker and more unpredictable over time
-- **Bioluminescence Management**: Balance energy between summoning fireflies and shield protection
-- **Delivery Streaks**: Chain consecutive deliveries for bonus points
-- **Heat System**: Overuse of magic temporarily overheats your abilities
-
-## Objective
-
-- **Collect & Deliver**: Gather fireflies and deliver them to Nyx Felis in the Sky
-- **Survive Until Dawn**: Last the full 10 minutes until sunrise
-- **Perfect Shield Timing**: Master the timing for maximum firefly protection
-- **Build Streaks**: Chain deliveries for bonus points
+- **Delivery Pressure Timer**: Visual countdown shows exactly when curiosity decays (every 15 seconds)
+  - Green: Safe zone (10+ seconds remaining)
+  - Yellow: Warning zone (5-10 seconds) 
+  - Red: Critical zone (<5 seconds)
+- **Streak System**: Consecutive deliveries build score multipliers up to 300% - but fail once and lose it all!
+- **Curiosity System**: Nyx's interest decays without deliveries. Reach -50 = game over  
+- **Perfect Timing**: White flash = shield protects ALL fireflies, good timing saves most
+- **Strategic Risk/Reward**: Wait for more fireflies vs deliver safely before deadline
+- **Bioluminescence (Mana) Management**: Summoning costs energy, only overheats when completely empty
+- **Dynamic Difficulty**: Nyx's gaze shifts become quicker over time
 
 ## Technical Details
 
