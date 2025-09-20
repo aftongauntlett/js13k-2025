@@ -577,6 +577,7 @@ let totalCollected = 0, totalLost = 0;
 let deliveryStreak = 0, bestStreak = 0; // New streak tracking
 let startTime = null, runStartTime = null;
 let shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
+let tierStats = { basic: 0, veteran: 0, elite: 0, legendary: 0, created: { veteran: 0, elite: 0, legendary: 0 }, lost: { veteran: 0, elite: 0, legendary: 0 } };
 let audioEnabled = true, pageVisible = true;
 let lastSpawnTime = 0; // For progressive difficulty spawning
 
@@ -1354,6 +1355,36 @@ const handleShieldProtection = (capturedFireflies, now) => {
   const firefliesLost = F(capturedFireflies.length * (1 - protectionRate));
   const firefliesProtected = capturedFireflies.length - firefliesLost;
   
+  // Upgrade protected captured fireflies based on shield timing quality
+  let upgradeCount = 0;
+  let legendaryCreated = 0;
+  
+  capturedFireflies.forEach((firefly, index) => {
+    if (index < firefliesProtected) { // This firefly survived
+      const upgradeResult = upgradeFirefly(firefly);
+      if (upgradeResult.upgraded) {
+        upgradeCount++;
+        if (upgradeResult.to === 'legendary') {
+          legendaryCreated++;
+        }
+      }
+    }
+  });
+  
+  // Also upgrade free fireflies marked as perfectly protected
+  otherFireflies.forEach(firefly => {
+    if (firefly.perfectlyProtected) {
+      const upgradeResult = upgradeFirefly(firefly);
+      if (upgradeResult.upgraded) {
+        upgradeCount++;
+        if (upgradeResult.to === 'legendary') {
+          legendaryCreated++;
+        }
+      }
+      delete firefly.perfectlyProtected; // Clean up marker
+    }
+  });
+  
   // Apply protection results
   if (firefliesLost > 0) {
     score -= firefliesLost;
@@ -1374,15 +1405,34 @@ const handleShieldProtection = (capturedFireflies, now) => {
   clearShieldFeedback();
   
   // Add visual feedback after clearing old messages - match "NO SHIELD!" formatting exactly
+  let shieldMessage = '';
   if (timingQuality === "PERFECT") {
-    addScoreText('PERFECT SHIELD!', w / 2, h / 2 - 80, '#ffffff', 300);
+    shieldMessage = 'PERFECT SHIELD!';
   } else if (timingQuality === "GREAT") {
-    addScoreText('GREAT SHIELD!', w / 2, h / 2 - 80, '#66ccff', 300);
+    shieldMessage = 'GREAT SHIELD!';
   } else if (timingQuality === "GOOD") {
-    addScoreText('GOOD SHIELD!', w / 2, h / 2 - 80, '#99ff99', 300);
+    shieldMessage = 'GOOD SHIELD!';
   } else if (timingQuality === "MISSED") {
-    addScoreText('MISSED SHIELD!', w / 2, h / 2 - 80, '#ff9999', 300);
+    shieldMessage = 'MISSED SHIELD!';
   }
+  
+  // Add upgrade info to shield message if upgrades happened
+  if (upgradeCount > 0) {
+    if (legendaryCreated > 0) {
+      shieldMessage += ` +${legendaryCreated} LEGENDARY!`;
+    } else {
+      shieldMessage += ` +${upgradeCount} EVOLVED!`;
+    }
+  }
+  
+  const messageColors = {
+    "PERFECT": '#ffffff',
+    "GREAT": '#66ccff', 
+    "GOOD": '#99ff99',
+    "MISSED": '#ff9999'
+  };
+  
+  addScoreText(shieldMessage, w / 2, h / 2 - 80, messageColors[timingQuality], 300);
   
   // Tutorial progression - advance after successful shield use
   if (!tutorialComplete && tutorialStep === 2 && firefliesProtected > 0) {
@@ -1596,55 +1646,127 @@ const drawScoreTexts = () => {
 
 // ===== FIREFLIES SYSTEM =====
 
-// Spawn a new firefly at random location
+// Firefly tier system constants
+const FIREFLY_TIERS = {
+  basic: { name: 'Basic', color: '#88ff88', points: 1, speed: 1.0 },     // Natural firefly green
+  veteran: { name: 'Veteran', color: '#9966ff', points: 3, speed: 1.2 }, // Purple - survived 1 protection
+  elite: { name: 'Elite', color: '#ffdd00', points: 8, speed: 1.5 },     // Gold - survived 2 protections  
+  legendary: { name: 'Legendary', color: 'rainbow', points: 20, speed: 2.0 } // Rainbow - survived 3+ protections
+};
+
+// Upgrade a firefly to the next tier after successful shield protection
+const upgradeFirefly = (firefly) => {
+  firefly.protectionCount++;
+  
+  // Determine new tier based on protection count
+  let newTier;
+  if (firefly.protectionCount >= 3) {
+    newTier = 'legendary';
+  } else if (firefly.protectionCount === 2) {
+    newTier = 'elite';
+  } else if (firefly.protectionCount === 1) {
+    newTier = 'veteran';
+  } else {
+    newTier = 'basic'; // Should not happen, but fallback
+  }
+  
+  // Only upgrade if we're moving to a higher tier
+  if (newTier !== firefly.tier) {
+    const oldTier = firefly.tier;
+    firefly.tier = newTier;
+    const tierData = FIREFLY_TIERS[newTier];
+    firefly.color = tierData.color;
+    firefly.points = tierData.points;
+    
+    // Track tier creation statistics (don't track basic->veteran as it's expected)
+    if (newTier === 'veteran') {
+      tierStats.created.veteran++;
+    } else if (newTier === 'elite') {
+      tierStats.created.elite++;
+    } else if (newTier === 'legendary') {
+      tierStats.created.legendary++;
+    }
+    
+    // Legendary fireflies are slightly larger and more dramatic
+    if (newTier === 'legendary') {
+      firefly.size = Math.max(firefly.size, 3 + r() * 2);
+      firefly.glowIntensity = 2.0 + r() * 0.5; // Extra bright
+    }
+    
+    // Return true to indicate an upgrade happened (for visual feedback)
+    return { upgraded: true, from: oldTier, to: newTier };
+  }
+  
+  return { upgraded: false };
+};
+
+// Spawn a firefly directly in the gameplay area (for initial game setup)
+const spawnFireflyInArea = () => {
+  if (otherFireflies.length >= CFG.maxFireflies) return;
+  
+  // All fireflies start as basic green fireflies
+  const tier = 'basic';
+  const color = '#88ff88'; // Natural firefly green
+  const points = 1;
+  const protectionCount = 0;
+  
+  // Spawn directly in the gameplay area (bottom half of screen)
+  const spawnX = 50 + r() * (w - 100); // Across the width with padding
+  const spawnY = h * 0.6 + r() * h * 0.35; // Bottom 35% of screen
+  
+  otherFireflies.push({
+    x: spawnX,
+    y: spawnY,
+    captured: false,
+    captureOffset: { x: 0, y: 0 },
+    floatTimer: r() * TAU,
+    flashTimer: r() * TAU,
+    roamTarget: null,
+    fadeIn: 1, // Start fully visible
+    glowIntensity: 1.5 + r() * 0.5,
+    size: 2 + r() * 2,
+    tier: tier,
+    color: color,
+    points: points,
+    protectionCount: protectionCount,
+    // No entrance animation - they start in place
+    spawningAnimation: false,
+    spawnTimer: 0,
+    spawnMaxTime: 0,
+    vx: undefined,
+    vy: undefined
+  });
+};
+
+// Spawn a new firefly from edges (for summoning)
 const spawnFirefly = () => {
   if (otherFireflies.length >= CFG.maxFireflies) return;
   
-  // Firefly type system for strategic depth
-  let type, color, points, rarity;
-  const roll = Math.random();
+  // All fireflies start as basic green fireflies
+  const tier = 'basic';
+  const color = '#88ff88'; // Natural firefly green
+  const points = 1;
+  const protectionCount = 0;
   
-  if (roll < 0.05) { // 5% chance - Rare Royal fireflies
-    type = 'royal';
-    color = '#9966ff'; // Purple
-    points = 5;
-    rarity = 'rare';
-  } else if (roll < 0.20) { // 15% chance - Valuable Golden fireflies  
-    type = 'golden';
-    color = '#ffdd00'; // Gold
-    points = 3;
-    rarity = 'uncommon';
-  } else if (roll < 0.40) { // 20% chance - Bonus Silver fireflies
-    type = 'silver'; 
-    color = '#ccccff'; // Silver-blue
-    points = 2;
-    rarity = 'common';
-  } else { // 60% chance - Basic fireflies
-    type = 'basic';
-    color = '#88ff88'; // Green
-    points = 1;
-    rarity = 'basic';
-  }
-  
-  // Spawn from edges for dramatic entrance
+  // Spawn from edges but move faster toward gameplay area
   let spawnX, spawnY, entranceVx, entranceVy;
   const side = Math.floor(r() * 3); // 0=bottom, 1=left, 2=right
   
   if (side === 0) { // From bottom
     spawnX = 50 + r() * (w - 100);
     spawnY = h + 20; // Start below screen
-    entranceVx = (r() - 0.5) * 2; // Slight horizontal drift
-    entranceVy = -2 - r() * 3; // Move upward into play area
+    entranceVx = (r() - 0.5) * 1; // Less horizontal drift
+    entranceVy = -4 - r() * 4; // Much faster upward movement
   } else if (side === 1) { // From left
     spawnX = -20; // Start left of screen
-    spawnY = h * 0.5 + r() * h * 0.4;
-    entranceVx = 2 + r() * 3; // Move right into play area
-    entranceVy = (r() - 0.5) * 2; // Slight vertical drift
+    spawnY = h * 0.6 + r() * h * 0.3; // Spawn closer to gameplay area
+    entranceVx = 4 + r() * 4; // Much faster rightward movement
+    entranceVy = (r() - 0.5) * 1; // Less vertical drift
   } else { // From right
     spawnX = w + 20; // Start right of screen
-    spawnY = h * 0.5 + r() * h * 0.4;
-    entranceVx = -2 - r() * 3; // Move left into play area
-    entranceVy = (r() - 0.5) * 2; // Slight vertical drift
+    spawnY = h * 0.6 + r() * h * 0.3; // Spawn closer to gameplay area
+    entranceVx = -4 - r() * 4; // Much faster leftward movement
+    entranceVy = (r() - 0.5) * 1; // Less vertical drift
   }
   
   otherFireflies.push({
@@ -1657,15 +1779,15 @@ const spawnFirefly = () => {
     roamTarget: null,
     fadeIn: 0, // For smooth spawning
     glowIntensity: 1.5 + r() * 0.5, // Start with stronger glow for new arrivals
-    size: type === 'royal' ? 3 + r() * 2 : 2 + r() * 2, // Royal fireflies are bigger
-    type: type,
+    size: 2 + r() * 2, // Base firefly size
+    tier: tier,
     color: color,
     points: points,
-    rarity: rarity,
+    protectionCount: protectionCount,
     // Entrance animation properties
     spawningAnimation: true,
     spawnTimer: 0,
-    spawnMaxTime: 120, // 2 seconds to fully enter
+    spawnMaxTime: 60, // 1 second to fully enter (faster)
     vx: entranceVx,
     vy: entranceVy
   });
@@ -1747,6 +1869,20 @@ const updateFireflies = (playerX, playerY) => {
     // Handle spawning animation (entering from edges)
     if (firefly.spawningAnimation) {
       firefly.spawnTimer++;
+      
+      // Add center-seeking force to move more directly into gameplay area
+      const centerX = w * 0.5;
+      const centerY = h * 0.75; // Target lower center area
+      const toCenterX = centerX - firefly.x;
+      const toCenterY = centerY - firefly.y;
+      const toCenterDistance = Math.sqrt(toCenterX * toCenterX + toCenterY * toCenterY);
+      
+      if (toCenterDistance > 50) { // Only apply when far from center
+        const centerForce = 0.2; // How strong the center attraction is
+        firefly.vx += (toCenterX / toCenterDistance) * centerForce;
+        firefly.vy += (toCenterY / toCenterDistance) * centerForce;
+      }
+      
       firefly.x += firefly.vx;
       firefly.y += firefly.vy;
       
@@ -1909,15 +2045,9 @@ const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
   const distance = hyp(dx, dy);
   
   if (distance > 5) {
-    // Rare fireflies move faster (risk/reward balance)
-    const typeSpeedMultiplier = {
-      'royal': 2.0,    // Royal fireflies are very fast
-      'golden': 1.5,   // Golden fireflies are faster  
-      'silver': 1.2,   // Silver fireflies are slightly faster
-      'basic': 1.0     // Basic fireflies normal speed
-    };
-    const typeMultiplier = typeSpeedMultiplier[firefly.type] || 1.0;
-    const speed = (0.3 + r() * 0.2) * speedMultiplier * typeMultiplier;
+    // Higher tier fireflies move faster (risk/reward balance)
+    const tierSpeedMultiplier = FIREFLY_TIERS[firefly.tier]?.speed || 1.0;
+    const speed = (0.3 + r() * 0.2) * speedMultiplier * tierSpeedMultiplier;
     firefly.x += (dx / distance) * speed;
     firefly.y += (dy / distance) * speed;
   }
@@ -1996,26 +2126,51 @@ const drawFireflies = (now) => {
     
     if (visibility <= 0) return; // Skip drawing when invisible
     
-    // Dynamic firefly colors based on type
+    // Dynamic firefly colors based on tier (both captured and free fireflies show tier colors)
     let bodyColor, glowColor, rgbValues;
+    let colorToUse;
     
-    if (firefly.captured) {
-      // Captured fireflies turn magical blue regardless of type
-      rgbValues = '120, 180, 255';
-      bodyColor = `rgba(${rgbValues}, ${visibility * alpha})`;
-      glowColor = `rgba(150, 200, 255, ${visibility * alpha * 0.8})`;
-    } else {
-      // Use firefly's natural color when free
-      const hex = firefly.color || '#88ff88';
-      // Convert hex to RGB for alpha blending
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16); 
-      const b = parseInt(hex.slice(5, 7), 16);
-      rgbValues = `${r}, ${g}, ${b}`;
+    if (firefly.tier === 'legendary' || firefly.color === 'rainbow') {
+      // Rainbow effect for legendary fireflies - cycle through colors
+      const rainbowSpeed = now * 0.003 + firefly.floatTimer; // Unique per firefly
+      const hue = (sin(rainbowSpeed) * 0.5 + 0.5) * 360; // 0-360 degrees
       
-      bodyColor = `rgba(${rgbValues}, ${visibility * alpha})`;
-      glowColor = `rgba(${Math.min(255, r + 30)}, ${Math.min(255, g + 30)}, ${Math.min(255, b + 30)}, ${visibility * alpha * 0.8})`;
+      // Convert HSL to RGB for rainbow effect
+      const hslToRgb = (h, s, l) => {
+        h /= 360;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => {
+          const k = (n + h * 12) % 12;
+          return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+        };
+        return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+      };
+      
+      const [r, g, b] = hslToRgb(hue, 0.8, 0.6); // High saturation, medium lightness
+      rgbValues = `${r}, ${g}, ${b}`;
+    } else {
+      // Use the tier's static color
+      colorToUse = firefly.color || FIREFLY_TIERS[firefly.tier]?.color || '#88ff88';
+      
+      // Convert hex to RGB for alpha blending
+      const r = parseInt(colorToUse.slice(1, 3), 16);
+      const g = parseInt(colorToUse.slice(3, 5), 16); 
+      const b = parseInt(colorToUse.slice(5, 7), 16);
+      rgbValues = `${r}, ${g}, ${b}`;
     }
+    
+    // Captured fireflies get a slight blue tint but keep their tier color
+    if (firefly.captured) {
+      // Mix tier color with slight blue tint for captured effect
+      const tierRgb = rgbValues.split(', ').map(Number);
+      const blueR = Math.round(tierRgb[0] * 0.7 + 120 * 0.3);
+      const blueG = Math.round(tierRgb[1] * 0.7 + 180 * 0.3);
+      const blueB = Math.round(tierRgb[2] * 0.7 + 255 * 0.3);
+      rgbValues = `${blueR}, ${blueG}, ${blueB}`;
+    }
+    
+    bodyColor = `rgba(${rgbValues}, ${visibility * alpha})`;
+    glowColor = `rgba(${rgbValues}, ${visibility * alpha * 0.8})`;
     
     // Gentle floating movement
     const floatX = firefly.x + sin(firefly.floatTimer) * 0.8;
@@ -2115,22 +2270,36 @@ const deliverFireflies = (capturedFireflies) => {
   deliveryStreak++;
   bestStreak = Math.max(bestStreak, deliveryStreak);
   
-  // Enhanced scoring system with firefly types
+  // Enhanced scoring system with firefly tiers
   const basePoints = capturedFireflies.reduce((sum, firefly) => sum + (firefly.points || 1), 0);
   const streakMultiplier = Math.min(3, 1 + (deliveryStreak - 1) * 0.5);
   const pointsAwarded = Math.floor(basePoints * streakMultiplier);
   
   score += pointsAwarded;
   
-  // Show point breakdown for valuable fireflies
-  const rareCounts = capturedFireflies.reduce((counts, firefly) => {
-    counts[firefly.type || 'basic'] = (counts[firefly.type || 'basic'] || 0) + 1;
+  // Count fireflies by tier for feedback
+  const tierCounts = capturedFireflies.reduce((counts, firefly) => {
+    const tier = firefly.tier || 'basic';
+    counts[tier] = (counts[tier] || 0) + 1;
     return counts;
   }, {});
   
-  // Display special firefly bonuses
-  // Remove floating text for rare firefly bonuses - reduce visual clutter
+  // Show special feedback for high-tier deliveries
+  if (tierCounts.legendary > 0) {
+    addScoreText(`+${tierCounts.legendary} LEGENDARY! (+${tierCounts.legendary * 20}pts)`, w / 2, h / 2 - 120, '#ff00ff', 240);
+  } else if (tierCounts.elite > 0) {
+    addScoreText(`+${tierCounts.elite} ELITE! (+${tierCounts.elite * 8}pts)`, w / 2, h / 2 - 120, '#ffdd00', 180);
+  } else if (tierCounts.veteran > 0) {
+    addScoreText(`+${tierCounts.veteran} VETERAN! (+${tierCounts.veteran * 3}pts)`, w / 2, h / 2 - 120, '#9966ff', 120);
+  }
+  
   totalCollected += capturedFireflies.length;
+  
+  // Track tier delivery statistics
+  capturedFireflies.forEach(firefly => {
+    const tier = firefly.tier || 'basic';
+    tierStats[tier]++;
+  });
   
   // Remove delivered fireflies
   otherFireflies = otherFireflies.filter(f => !f.captured);
@@ -3061,6 +3230,7 @@ const restartGame = () => {
   deliveryStreak = 0;
   bestStreak = 0;
   shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
+  tierStats = { basic: 0, veteran: 0, elite: 0, legendary: 0, created: { veteran: 0, elite: 0, legendary: 0 }, lost: { veteran: 0, elite: 0, legendary: 0 } };
   glowPower = 0;
   charging = false;
   mouseMoving = false;
@@ -3122,7 +3292,7 @@ const restartGame = () => {
     spawnCount = 20; // More fireflies during tutorial steps
   }
   for (let i = 0; i < spawnCount; i++) {
-    spawnFirefly();
+    spawnFireflyInArea();
   }
   
   playTone(600, 0.2, 0.1);
@@ -3377,7 +3547,8 @@ const drawHelp = () => {
     "",
     "OBJECTIVE:",
     "- Collect fireflies and deliver them to Nyx Felis in the Sky",
-    "- Different fireflies give different points: Basic(1), Silver(2), Gold(3), Royal(5)",
+    "- Firefly Evolution: Basic(green,1pt) → Veteran(purple,3pts) → Elite(gold,8pts) → Legendary(rainbow,20pts)",
+    "- Successfully shield fireflies during color changes to evolve them to higher tiers!",
     "- Watch delivery pressure timer (bottom) - Green→Yellow→Red shows time until decay", 
     "- Deliver before timer reaches red (15 second deadline) or curiosity drops!",
     "- Survive until dawn (3 minutes) and live to see another night",
@@ -3385,9 +3556,10 @@ const drawHelp = () => {
     "",
     "DANGER:",
     "- When Nyx's eyes begin to shift and change colors, be prepared",
-    "- PERFECT timing (white flash) protects ALL fireflies in view",
-    "- Good timing (yellow/green) saves most captured fireflies",
-    "- Even without shield, some fireflies may escape to safety",
+    "- PERFECT timing (white flash) protects AND EVOLVES ALL fireflies in view",
+    "- Good timing (yellow/green) saves most captured fireflies and evolves them",
+    "- Even without shield, some fireflies may escape to safety (but won't evolve)",
+    "- Higher tier fireflies are worth more but move faster - risk vs reward!",
     "- If Nyx's curiosity reaches -50, she loses interest and you lose!",
     "",
     "STRATEGY:",
@@ -3396,7 +3568,8 @@ const drawHelp = () => {
     "- Master perfect shield timing for maximum protection",
     "- Risk vs reward: collect more fireflies vs deliver safely before deadline",
     "- Keep moving! Idle too long and fireflies disperse",
-    "- Rare fireflies (Gold/Royal) move faster but give more points",
+    "- Evolution Strategy: Protect fireflies long-term for massive point gains!",
+    "- Legendary fireflies (rainbow) are worth 20x basic ones but very risky to keep",
     "- Protect your delivery streak - losing fireflies or missing deadlines breaks it!",
     "- Watch both the pressure timer AND Nyx's eyes - timing is everything!"
   ];
@@ -3652,6 +3825,71 @@ const drawGameOverScreen = () => {
       setFill(assessmentColor);
       x.font = `14px ${FONTS.body}`;
       x.fillText(assessment, w / 2, currentY);
+      currentY += 15;
+    }
+    
+    currentY += 20;
+  }
+  
+  // Firefly tier statistics
+  const totalHighTier = tierStats.veteran + tierStats.elite + tierStats.legendary;
+  if (totalHighTier > 0) {
+    setFill("#ffffff");
+    x.font = `22px ${FONTS.body}`;
+    x.fillText("Firefly Evolution Mastery:", w / 2, currentY);
+    currentY += 35;
+    
+    x.font = `18px ${FONTS.body}`;
+    
+    if (tierStats.legendary > 0) {
+      setFill("#ff00ff");
+      x.fillText(`Legendary Delivered: ${tierStats.legendary} (${tierStats.legendary * 20}pts)`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (tierStats.elite > 0) {
+      setFill("#ffdd00");
+      x.fillText(`Elite Delivered: ${tierStats.elite} (${tierStats.elite * 8}pts)`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    if (tierStats.veteran > 0) {
+      setFill("#9966ff");
+      x.fillText(`Veteran Delivered: ${tierStats.veteran} (${tierStats.veteran * 3}pts)`, w / 2, currentY);
+      currentY += 25;
+    }
+    
+    // Show creation stats
+    const totalCreated = tierStats.created.veteran + tierStats.created.elite + tierStats.created.legendary;
+    if (totalCreated > 0) {
+      setFill("#cccccc");
+      x.font = `16px ${FONTS.body}`;
+      x.fillText(`Evolved: ${tierStats.created.veteran}V ${tierStats.created.elite}E ${tierStats.created.legendary}L`, w / 2, currentY);
+      currentY += 20;
+    }
+    
+    // Evolution mastery assessment
+    let evolutionTitle = "";
+    let evolutionColor = "#cccccc";
+    
+    if (tierStats.legendary >= 5) {
+      evolutionTitle = "Rainbow Master!";
+      evolutionColor = "#ff00ff";
+    } else if (tierStats.legendary >= 2) {
+      evolutionTitle = "Legendary Protector";
+      evolutionColor = "#ff66ff";
+    } else if (tierStats.elite >= 3) {
+      evolutionTitle = "Elite Guardian";
+      evolutionColor = "#ffdd00";
+    } else if (tierStats.veteran >= 5) {
+      evolutionTitle = "Veteran Shepherd";
+      evolutionColor = "#9966ff";
+    }
+    
+    if (evolutionTitle) {
+      setFill(evolutionColor);
+      x.font = `14px ${FONTS.body}`;
+      x.fillText(evolutionTitle, w / 2, currentY);
       currentY += 15;
     }
     
@@ -4298,10 +4536,10 @@ const initGame = () => {
     }
   });
   
-  // Spawn initial fireflies - increased for better game feel
+  // Spawn initial fireflies directly in gameplay area - no entrance animation
   const initialFireflies = tutorialComplete ? 25 : 12;
   for (let i = 0; i < initialFireflies; i++) {
-    spawnFirefly();
+    spawnFireflyInArea();
   }
   
   // Background music will start on first user interaction (browser requirement)
