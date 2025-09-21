@@ -591,6 +591,9 @@ let playerIsIdle = false;
 // Leaderboard system
 let showLeaderboard = false;
 let isNewHighScore = false;
+let showNameInput = false;
+let playerName = "";
+let pendingScore = null;
 
 // Firebase config - loaded from Vercel environment variables
 const FIREBASE_CONFIG = typeof process !== 'undefined' && process.env ? {
@@ -1660,19 +1663,24 @@ const saveLeaderboard = async (leaderboard) => {
   // Note: Individual scores are saved to Firebase, not the entire leaderboard array
 };
 
-// Add score to leaderboard
-const addScoreToLeaderboard = async (finalScore, gameWon, timeString, mode) => {
+// Add score to leaderboard (only for completed 3-minute games)
+const addScoreToLeaderboard = async (finalScore, playerName) => {
   const leaderboard = await getLeaderboard();
-  const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+  
+  // Format date as M/D/YY
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const day = now.getDate();
+  const year = now.getFullYear().toString().slice(-2);
+  const dateString = `${month}/${day}/${year}`;
   
   const newEntry = {
+    name: playerName || "Anonymous",
     score: finalScore,
-    won: gameWon,
-    time: timeString,
-    mode: mode,
-    date: timestamp,
     delivered: totalCollected,
-    streak: bestStreak
+    streak: bestStreak,
+    perfectShields: shieldStats.perfect,
+    date: dateString
   };
   
   leaderboard.push(newEntry);
@@ -1695,7 +1703,7 @@ const addScoreToLeaderboard = async (finalScore, gameWon, timeString, mode) => {
   // Check if this is a new high score (top 3)
   const position = topScores.findIndex(entry => 
     entry.score === finalScore && 
-    entry.date === timestamp && 
+    entry.name === newEntry.name && 
     entry.delivered === totalCollected
   );
   
@@ -3123,6 +3131,51 @@ const handleMouseUp = (e) => {
 
 // Keyboard handler
 const handleKeyDown = (e) => {
+  // Handle name input first
+  if (showNameInput) {
+    e.preventDefault();
+    
+    if (e.code === "Enter") {
+      // Submit score with name
+      if (pendingScore) {
+        addScoreToLeaderboard(pendingScore.score, playerName || "Anonymous")
+          .then(result => {
+            isNewHighScore = result;
+            leaderboardCacheTime = 0; // Refresh leaderboard cache
+          })
+          .catch(e => console.warn('Failed to save score:', e));
+        
+        showNameInput = false;
+        pendingScore = null;
+        playerName = "";
+      }
+      return;
+    }
+    
+    if (e.code === "Escape") {
+      // Skip name entry
+      showNameInput = false;
+      pendingScore = null;
+      playerName = "";
+      return;
+    }
+    
+    if (e.code === "Backspace") {
+      playerName = playerName.slice(0, -1);
+      return;
+    }
+    
+    // Add character to name (limit to 20 characters)
+    if (e.key.length === 1 && playerName.length < 20) {
+      const char = e.key;
+      // Allow letters, numbers, spaces, and basic punctuation
+      if (/^[a-zA-Z0-9 \-_!.]$/.test(char)) {
+        playerName += char;
+      }
+    }
+    return;
+  }
+  
   // Initialize audio on first user gesture
   startAudioOnUserGesture();
   
@@ -3397,6 +3450,9 @@ const restartGame = () => {
   gameOverTime = null; // Reset game over time
   gameStarted = true; // Ensure game is marked as started
   isNewHighScore = false; // Reset high score flag
+  showNameInput = false; // Reset name input state
+  playerName = ""; // Reset player name
+  pendingScore = null; // Reset pending score
   score = 0;
   totalCollected = 0;
   totalLost = 0;
@@ -4113,16 +4169,15 @@ const drawGameOverScreen = () => {
   // Simplified final score calculation
   const finalScore = gameWon ? score + 1000 + (bestStreak * 50) : score;
   
-  // Add score to leaderboard and check for high score (async operation)
-  if (gameOverTime && !isNewHighScore) {
-    // Handle async score saving (fire and forget for display purposes)
-    addScoreToLeaderboard(finalScore, gameWon, timeString, infiniteMode ? 'Infinite' : 'Normal')
-      .then(result => {
-        isNewHighScore = result;
-        // Invalidate cache so leaderboard refreshes
-        leaderboardCacheTime = 0;
-      })
-      .catch(e => console.warn('Failed to save score:', e));
+  // Show name input for completed games (won or survived full 3 minutes)
+  if (gameOverTime && !isNewHighScore && gameWon && !infiniteMode && !showNameInput && !pendingScore) {
+    // Store the score for name input
+    pendingScore = {
+      score: finalScore,
+      gameWon: gameWon
+    };
+    showNameInput = true;
+    playerName = "";
   }
   
   // Dark overlay
@@ -4307,67 +4362,87 @@ const drawLeaderboard = () => {
   if (leaderboard.length === 0) {
     setFill("#cccccc");
     x.font = `20px ${FONTS.body}`;
-    x.fillText("No scores yet - be the first!", w / 2, currentY + 50);
+    x.fillText("No scores yet - be the first to complete 3 minutes!", w / 2, currentY + 50);
   } else {
-    // Table headers
-    setFill("#ffffff");
-    x.font = `16px ${FONTS.body}`;
+    // Column positions
+    const nameCol = w * 0.15;      // Name
+    const scoreCol = w * 0.35;     // Score  
+    const deliveredCol = w * 0.5;  // Delivered
+    const streakCol = w * 0.62;    // Streak
+    const shieldsCol = w * 0.74;   // Perfect shields
+    const dateCol = w * 0.86;      // Date
+    
+    // Table headers with better spacing
+    setFill("#d4af37");
+    x.font = `bold 16px ${FONTS.body}`;
     x.textAlign = "left";
     
-    const leftCol = w * 0.2;   // Rank & Score
-    const midCol = w * 0.5;    // Stats
-    const rightCol = w * 0.75; // Date & Mode
-    
-    x.fillText("Rank  Score", leftCol, currentY);
-    x.fillText("Delivered • Streak • Time", midCol, currentY);
-    x.fillText("Date • Mode", rightCol, currentY);
+    x.fillText("Player", nameCol, currentY);
+    x.fillText("Score", scoreCol, currentY);
+    x.fillText("Delivered", deliveredCol, currentY);
+    x.fillText("Streak", streakCol, currentY);
+    x.fillText("Shields", shieldsCol, currentY);
+    x.fillText("Date", dateCol, currentY);
     currentY += LINE_SPACING;
     
     // Separator line
-    setStroke("#555555");
-    setLineWidth(1);
+    setStroke("#d4af37");
+    setLineWidth(2);
     x.beginPath();
-    x.moveTo(leftCol, currentY);
-    x.lineTo(w * 0.85, currentY);
+    x.moveTo(nameCol, currentY);
+    x.lineTo(w * 0.92, currentY);
     x.stroke();
     currentY += LINE_SPACING;
     
-    // Leaderboard entries
+    // Leaderboard entries with improved design
     leaderboard.forEach((entry, index) => {
       const rank = index + 1;
       
-      // Rank colors
-      let rankColor = "#cccccc";
-      if (rank === 1) rankColor = "#ffd700"; // Gold
-      else if (rank === 2) rankColor = "#c0c0c0"; // Silver  
-      else if (rank === 3) rankColor = "#cd7f32"; // Bronze
-      
-      setFill(rankColor);
-      x.font = `${rank <= 3 ? 'bold ' : ''}16px ${FONTS.body}`;
-      
-      // Rank and score
-      x.textAlign = "left";
-      x.fillText(`${rank}.`, leftCol, currentY);
-      x.fillText(`${entry.score}`, leftCol + 30, currentY);
-      
-      // Win indicator
-      if (entry.won) {
-        setFill("#44dd44");
-        x.fillText("★", leftCol + 30 + x.measureText(`${entry.score}`).width + 10, currentY);
+      // Row background for top 3
+      if (rank <= 3) {
+        const bgAlpha = rank === 1 ? 0.2 : rank === 2 ? 0.15 : 0.1;
+        const bgColor = rank === 1 ? "#ffd700" : rank === 2 ? "#c0c0c0" : "#cd7f32";
+        setFill(bgColor + Math.floor(bgAlpha * 255).toString(16).padStart(2, '0'));
+        x.fillRect(nameCol - 10, currentY - 18, w * 0.8, LINE_SPACING - 2);
       }
       
-      // Stats
-      setFill("#aaaaaa");
-      x.font = `14px ${FONTS.body}`;
-      x.fillText(`${entry.delivered} • ${entry.streak}x • ${entry.time}`, midCol, currentY);
+      // Rank medal/number
+      if (rank <= 3) {
+        const medals = ["🥇", "🥈", "🥉"];
+        setFill("#ffffff");
+        x.font = `18px ${FONTS.body}`;
+        x.fillText(medals[rank - 1], nameCol - 25, currentY);
+      } else {
+        setFill("#888888");
+        x.font = `14px ${FONTS.body}`;
+        x.fillText(`${rank}`, nameCol - 20, currentY);
+      }
       
-      // Date and mode
-      x.fillText(`${entry.date} • ${entry.mode || 'Normal'}`, rightCol, currentY);
+      // Player name
+      setFill(rank <= 3 ? "#ffffff" : "#cccccc");
+      x.font = `${rank <= 3 ? 'bold ' : ''}15px ${FONTS.body}`;
+      const displayName = entry.name || "Anonymous";
+      const maxNameWidth = scoreCol - nameCol - 10;
+      const truncatedName = displayName.length > 12 ? displayName.substring(0, 12) + "..." : displayName;
+      x.fillText(truncatedName, nameCol, currentY);
+      
+      // Score with emphasis for top scores
+      setFill(rank <= 3 ? "#ffffff" : "#dddddd");
+      x.font = `${rank <= 3 ? 'bold ' : ''}15px ${FONTS.body}`;
+      x.fillText(entry.score, scoreCol, currentY);
+      
+      // Stats in consistent color
+      setFill(rank <= 3 ? "#e0e0e0" : "#aaaaaa");
+      x.font = `14px ${FONTS.body}`;
+      x.fillText(entry.delivered || 0, deliveredCol, currentY);
+      x.fillText(`${entry.streak || 0}x`, streakCol, currentY);
+      x.fillText(entry.perfectShields || 0, shieldsCol, currentY);
+      x.fillText(entry.date || "Today", dateCol, currentY);
       
       currentY += LINE_SPACING;
       
       // Stop at reasonable screen height
-      if (currentY > h * 0.85) return;
+      if (currentY > h * 0.82) return;
     });
   }
   
@@ -4377,6 +4452,79 @@ const drawLeaderboard = () => {
   x.font = `16px ${FONTS.body}`;
   x.textAlign = "center";
   x.fillText("Press 'L' or ESC to close", w / 2, currentY);
+  
+  x.restore();
+};
+
+// Draw name input screen for leaderboard entry
+const drawNameInput = () => {
+  if (!showNameInput) return;
+  
+  // Dark overlay
+  setFill(BLACK(0.95));
+  x.fillRect(0, 0, w, h);
+  
+  x.save();
+  x.textAlign = "center";
+  
+  let currentY = h * 0.35;
+  
+  // Title
+  setFill("#d4af37");
+  x.font = `32px ${FONTS.title}`;
+  x.shadowColor = "#d4af37";
+  x.shadowBlur = 6;
+  x.fillText("Enter Your Name", w / 2, currentY);
+  x.shadowBlur = 0;
+  currentY += 60;
+  
+  // Score display
+  setFill("#ffffff");
+  x.font = `20px ${FONTS.body}`;
+  x.fillText(`Score: ${pendingScore?.score || 0}`, w / 2, currentY);
+  currentY += 60;
+  
+  // Name input box
+  const inputWidth = 300;
+  const inputHeight = 40;
+  const inputX = (w - inputWidth) / 2;
+  const inputY = currentY - inputHeight + 10;
+  
+  // Input box background
+  setFill("#333333");
+  setStroke("#666666");
+  setLineWidth(2);
+  x.fillRect(inputX, inputY, inputWidth, inputHeight);
+  x.strokeRect(inputX, inputY, inputWidth, inputHeight);
+  
+  // Player name text
+  setFill("#ffffff");
+  x.font = `18px ${FONTS.body}`;
+  x.textAlign = "left";
+  const textX = inputX + 15;
+  const textY = inputY + inputHeight / 2 + 6;
+  x.fillText(playerName || "", textX, textY);
+  
+  // Cursor
+  if (Math.floor(Date.now() / 500) % 2) {
+    const cursorX = textX + x.measureText(playerName).width;
+    setStroke("#ffffff");
+    setLineWidth(1);
+    x.beginPath();
+    x.moveTo(cursorX, inputY + 8);
+    x.lineTo(cursorX, inputY + inputHeight - 8);
+    x.stroke();
+  }
+  
+  currentY += 80;
+  
+  // Instructions
+  x.textAlign = "center";
+  setFill("#aaaaaa");
+  x.font = `16px ${FONTS.body}`;
+  x.fillText("Type your name and press ENTER", w / 2, currentY);
+  currentY += 25;
+  x.fillText("or press ESCAPE to skip", w / 2, currentY);
   
   x.restore();
 };
@@ -4893,6 +5041,7 @@ function gameLoop() {
   drawHelp();
   drawGameOverScreen();
   drawLeaderboard();
+  drawNameInput();
   
   // Draw cursor firefly on top of overlays when they're active
   const overlaysActive = showHelp || gameOver || gameWon;
