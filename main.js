@@ -588,6 +588,36 @@ let infiniteMode = false; // Infinite mode toggle
 let lastPlayerMoveTime = Date.now();
 let playerIsIdle = false;
 
+// Leaderboard system
+let showLeaderboard = false;
+let isNewHighScore = false;
+
+// Firebase config - loaded from Vercel environment variables
+const FIREBASE_CONFIG = typeof process !== 'undefined' && process.env ? {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID
+} : null; // Falls back to localStorage when env vars not available
+
+// Initialize Firebase
+let firebaseEnabled = false;
+if (FIREBASE_CONFIG && typeof firebase !== 'undefined') {
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    window.db = firebase.firestore();
+    firebaseEnabled = true;
+    console.log('🔥 Firebase initialized - live leaderboard enabled!');
+  } catch (error) {
+    console.warn('Firebase initialization failed, using localStorage:', error);
+    firebaseEnabled = false;
+  }
+} else {
+  console.log('📱 Using localStorage leaderboard (Firebase not configured)');
+}
+
 // Nyx's curiosity tracking
 let lastDeliveryTime = null;
 
@@ -1586,6 +1616,90 @@ const drawDeliveryZone = (now) => {
   x.restore();
   
   // No delivery zone UI elements - zone is invisible but functional
+};
+
+// ===== LEADERBOARD SYSTEM =====
+
+// Get leaderboard (supports both localStorage and Firebase)
+const getLeaderboard = async () => {
+  if (firebaseEnabled && window.db) {
+    try {
+      // Firebase implementation (when available)
+      const snapshot = await window.db.collection('leaderboard')
+        .orderBy('score', 'desc')
+        .limit(10)
+        .get();
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (e) {
+      console.warn('Firebase leaderboard failed, falling back to localStorage:', e);
+    }
+  }
+  
+  // LocalStorage fallback
+  try {
+    return JSON.parse(localStorage.getItem('firefly_leaderboard') || '[]');
+  } catch {
+    return [];
+  }
+};
+
+// Save leaderboard (supports both localStorage and Firebase)
+const saveLeaderboard = async (leaderboard) => {
+  // Always save to localStorage as backup
+  try {
+    localStorage.setItem('firefly_leaderboard', JSON.stringify(leaderboard));
+  } catch (e) {
+    console.warn('Could not save leaderboard to localStorage:', e);
+  }
+  
+  // Also save to Firebase if enabled (this happens in addScoreToLeaderboard)
+  // Note: Individual scores are saved to Firebase, not the entire leaderboard array
+};
+
+// Add score to leaderboard
+const addScoreToLeaderboard = async (finalScore, gameWon, timeString, mode) => {
+  const leaderboard = await getLeaderboard();
+  const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+  
+  const newEntry = {
+    score: finalScore,
+    won: gameWon,
+    time: timeString,
+    mode: mode,
+    date: timestamp,
+    delivered: totalCollected,
+    streak: bestStreak
+  };
+  
+  leaderboard.push(newEntry);
+  leaderboard.sort((a, b) => b.score - a.score); // Sort by score descending
+  
+  // Keep only top 10 scores
+  const topScores = leaderboard.slice(0, 10);
+  await saveLeaderboard(topScores);
+  
+  // Save the new entry to Firebase (if enabled)
+  if (firebaseEnabled && window.db) {
+    try {
+      await window.db.collection('leaderboard').add(newEntry);
+      console.log('Score saved to Firebase leaderboard');
+    } catch (e) {
+      console.warn('Could not save score to Firebase:', e);
+    }
+  }
+  
+  // Check if this is a new high score (top 3)
+  const position = topScores.findIndex(entry => 
+    entry.score === finalScore && 
+    entry.date === timestamp && 
+    entry.delivered === totalCollected
+  );
+  
+  return position < 3; // Return true if top 3
 };
 
 // ===== SCORE SYSTEM =====
@@ -3068,9 +3182,30 @@ const handleKeyDown = (e) => {
 
 
   
+  // Toggle leaderboard
+  if (e.code === "KeyL") {
+    e.preventDefault();
+    if (!showLeaderboard) {
+      // Load data when opening leaderboard
+      loadLeaderboardData().then(() => {
+        showLeaderboard = true;
+      });
+    } else {
+      showLeaderboard = false;
+    }
+    return;
+  }
+  
   // Toggle help
   if (e.code === "Escape") {
     e.preventDefault();
+    
+    // Close leaderboard if it's open
+    if (showLeaderboard) {
+      showLeaderboard = false;
+      return;
+    }
+    
     if (showHelp) {
       // Closing help menu - add to total pause time
       totalHelpPauseTime += Date.now() - helpOpenTime;
@@ -3261,6 +3396,7 @@ const restartGame = () => {
   gameWon = false; // Reset victory state
   gameOverTime = null; // Reset game over time
   gameStarted = true; // Ensure game is marked as started
+  isNewHighScore = false; // Reset high score flag
   score = 0;
   totalCollected = 0;
   totalLost = 0;
@@ -3977,6 +4113,18 @@ const drawGameOverScreen = () => {
   // Simplified final score calculation
   const finalScore = gameWon ? score + 1000 + (bestStreak * 50) : score;
   
+  // Add score to leaderboard and check for high score (async operation)
+  if (gameOverTime && !isNewHighScore) {
+    // Handle async score saving (fire and forget for display purposes)
+    addScoreToLeaderboard(finalScore, gameWon, timeString, infiniteMode ? 'Infinite' : 'Normal')
+      .then(result => {
+        isNewHighScore = result;
+        // Invalidate cache so leaderboard refreshes
+        leaderboardCacheTime = 0;
+      })
+      .catch(e => console.warn('Failed to save score:', e));
+  }
+  
   // Dark overlay
   setFill(BLACK(0.9));
   x.fillRect(0, 0, w, h);
@@ -4072,16 +4220,163 @@ const drawGameOverScreen = () => {
   x.fillText("Points earned from delivering fireflies (Basic: 1pt, Veteran: 3pts, Elite: 8pts, Legendary: 20pts)", w / 2, currentY);
   currentY += 25;
   
+  // New high score notification
+  if (isNewHighScore) {
+    setFill("#ffd700");
+    x.font = `bold 18px ${FONTS.body}`;
+    x.shadowColor = "#ffd700";
+    x.shadowBlur = 6;
+    x.fillText("🏆 NEW HIGH SCORE! 🏆", w / 2, currentY);
+    x.shadowBlur = 0;
+    currentY += 30;
+  }
+  
   // Flavor text
   setFill(isWin ? "#88dd88" : "#dd8888");
   x.font = `16px ${FONTS.body}`;
   x.fillText(isWin ? "Nyx remains fascinated by your light!" : "Nyx has grown bored with the darkness", w / 2, currentY);
   currentY += SECTION_SPACING;
   
-  // Restart instruction
-  setFill("#aaaaaa");
-  x.font = `18px ${FONTS.body}`;
+  // Buttons
+  setFill("#888888");
+  x.font = `16px ${FONTS.body}`;
   x.fillText("Click to play again", w / 2, currentY);
+  currentY += 25;
+  
+  setFill("#aaaaaa");
+  x.font = `14px ${FONTS.body}`;
+  x.fillText("Press 'L' to view leaderboard", w / 2, currentY);
+  
+  x.restore();
+};
+
+// Draw leaderboard screen with consistent styling
+// Cache for leaderboard data to avoid excessive async calls
+let leaderboardCache = [];
+let leaderboardCacheTime = 0;
+const CACHE_DURATION = 5000; // 5 seconds
+
+// Load leaderboard data asynchronously
+const loadLeaderboardData = async () => {
+  const now = Date.now();
+  
+  // Use cached data if recent enough
+  if (now - leaderboardCacheTime < CACHE_DURATION && leaderboardCache.length > 0) {
+    return leaderboardCache;
+  }
+  
+  try {
+    leaderboardCache = await getLeaderboard();
+    leaderboardCacheTime = now;
+    return leaderboardCache;
+  } catch (e) {
+    console.warn('Failed to load leaderboard:', e);
+    return [];
+  }
+};
+
+const drawLeaderboard = () => {
+  if (!showLeaderboard) return;
+  
+  // Dark overlay
+  setFill(BLACK(0.9));
+  x.fillRect(0, 0, w, h);
+  
+  x.save();
+  x.textAlign = "center";
+  
+  // Start position
+  let currentY = h * 0.1;
+  
+  // Use consistent styling from game over screen
+  const LINE_SPACING = 30;
+  const SECTION_SPACING = 40;
+  
+  // Title
+  setFill("#d4af37"); // Gold color like help menu title
+  x.font = `42px ${FONTS.title}`;
+  x.shadowColor = "#d4af37";
+  x.shadowBlur = 8;
+  x.fillText("Leaderboard", w / 2, currentY);
+  x.shadowBlur = 0;
+  currentY += SECTION_SPACING + 10;
+  
+  // Use cached leaderboard data (will be loaded async when leaderboard is first shown)
+  const leaderboard = leaderboardCache;
+  
+  if (leaderboard.length === 0) {
+    setFill("#cccccc");
+    x.font = `20px ${FONTS.body}`;
+    x.fillText("No scores yet - be the first!", w / 2, currentY + 50);
+  } else {
+    // Table headers
+    setFill("#ffffff");
+    x.font = `16px ${FONTS.body}`;
+    x.textAlign = "left";
+    
+    const leftCol = w * 0.2;   // Rank & Score
+    const midCol = w * 0.5;    // Stats
+    const rightCol = w * 0.75; // Date & Mode
+    
+    x.fillText("Rank  Score", leftCol, currentY);
+    x.fillText("Delivered • Streak • Time", midCol, currentY);
+    x.fillText("Date • Mode", rightCol, currentY);
+    currentY += LINE_SPACING;
+    
+    // Separator line
+    setStroke("#555555");
+    setLineWidth(1);
+    x.beginPath();
+    x.moveTo(leftCol, currentY);
+    x.lineTo(w * 0.85, currentY);
+    x.stroke();
+    currentY += LINE_SPACING;
+    
+    // Leaderboard entries
+    leaderboard.forEach((entry, index) => {
+      const rank = index + 1;
+      
+      // Rank colors
+      let rankColor = "#cccccc";
+      if (rank === 1) rankColor = "#ffd700"; // Gold
+      else if (rank === 2) rankColor = "#c0c0c0"; // Silver  
+      else if (rank === 3) rankColor = "#cd7f32"; // Bronze
+      
+      setFill(rankColor);
+      x.font = `${rank <= 3 ? 'bold ' : ''}16px ${FONTS.body}`;
+      
+      // Rank and score
+      x.textAlign = "left";
+      x.fillText(`${rank}.`, leftCol, currentY);
+      x.fillText(`${entry.score}`, leftCol + 30, currentY);
+      
+      // Win indicator
+      if (entry.won) {
+        setFill("#44dd44");
+        x.fillText("★", leftCol + 30 + x.measureText(`${entry.score}`).width + 10, currentY);
+      }
+      
+      // Stats
+      setFill("#aaaaaa");
+      x.font = `14px ${FONTS.body}`;
+      x.fillText(`${entry.delivered} • ${entry.streak}x • ${entry.time}`, midCol, currentY);
+      
+      // Date and mode
+      x.fillText(`${entry.date} • ${entry.mode || 'Normal'}`, rightCol, currentY);
+      
+      currentY += LINE_SPACING;
+      
+      // Stop at reasonable screen height
+      if (currentY > h * 0.85) return;
+    });
+  }
+  
+  // Instructions
+  currentY = Math.max(currentY + SECTION_SPACING, h * 0.85);
+  setFill("#888888");
+  x.font = `16px ${FONTS.body}`;
+  x.textAlign = "center";
+  x.fillText("Press 'L' or ESC to close", w / 2, currentY);
   
   x.restore();
 };
@@ -4428,7 +4723,7 @@ const drawMainUI = () => {
   setFill("#666666");
   x.font = `14px ${FONTS.body}`;
   const modeIndicator = infiniteMode ? " • Infinite Mode" : "";
-  x.fillText(`Press 'ESC' for help • 'M' - Audio: ${audioEnabled ? 'ON' : 'OFF'}${modeIndicator}`, w - 20, h - 20);
+  x.fillText(`'ESC' help • 'L' leaderboard • 'M' audio: ${audioEnabled ? 'ON' : 'OFF'}${modeIndicator}`, w - 20, h - 20);
   
   x.restore();
 };
@@ -4597,6 +4892,7 @@ function gameLoop() {
   drawTutorialGuidance();
   drawHelp();
   drawGameOverScreen();
+  drawLeaderboard();
   
   // Draw cursor firefly on top of overlays when they're active
   const overlaysActive = showHelp || gameOver || gameWon;

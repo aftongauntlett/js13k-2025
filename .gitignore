@@ -5,6 +5,7 @@ dist/
 # Development files  
 *.backup
 test/
+.env
 
 # Node modules
 node_modules/
