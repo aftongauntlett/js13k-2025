@@ -575,11 +575,14 @@ let score = 0, gameStarted = true, gameOver = false;
 let gameOverTime = null; // Stores the time when game ended for frozen display
 let totalCollected = 0, totalLost = 0;
 let deliveryStreak = 0, bestStreak = 0; // New streak tracking
-let startTime = null, runStartTime = null;
+let startTime = null;
 let shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
 let tierStats = { basic: 0, veteran: 0, elite: 0, legendary: 0, created: { veteran: 0, elite: 0, legendary: 0 }, lost: { veteran: 0, elite: 0, legendary: 0 } };
 let audioEnabled = true, pageVisible = true;
 let lastSpawnTime = 0; // For progressive difficulty spawning
+
+// Infinite mode system
+let infiniteMode = false; // Infinite mode toggle
 
 // Idle tracking for firefly dispersal
 let lastPlayerMoveTime = Date.now();
@@ -2429,11 +2432,13 @@ const updatePlayer = (now) => {
         shieldCooldown = 60; // 1 second
       }
     } else {
-      // Drain bioluminescence while shield is active - reduced drain rate
-      manaEnergy = Math.max(0, manaEnergy - 0.1); // Reduced from 0.15 to 0.1
-      
-      // Add heat for sustained shield use (slower than summoning)
-      summonHeat += 0.4; // Reduced from 0.5 for more forgiving gameplay
+      if (!infiniteMode) {
+        // Drain bioluminescence while shield is active - reduced drain rate
+        manaEnergy = Math.max(0, manaEnergy - 0.1); // Reduced from 0.15 to 0.1
+        
+        // Add heat for sustained shield use (slower than summoning)
+        summonHeat += 0.4; // Reduced from 0.5 for more forgiving gameplay
+      }
     }
   }
   
@@ -2907,9 +2912,30 @@ const handleMouseDown = (e) => {
   playerIsIdle = false;
   
   if (showHelp) {
-    // Closing help menu - add to total pause time
-    totalHelpPauseTime += Date.now() - helpOpenTime;
-    showHelp = false;
+    // Check if clicking on mode toggle button in help menu
+    if (window.helpModeToggle) {
+      const btn = window.helpModeToggle;
+      if (mx >= btn.x - btn.width/2 && mx <= btn.x + btn.width/2 &&
+          my >= btn.y - btn.height/2 && my <= btn.y + btn.height/2) {
+        
+        // Toggle infinite mode
+        infiniteMode = !infiniteMode;
+        
+        // Show confirmation message
+        const modeText = infiniteMode ? "Infinite Mode Enabled" : "Normal Mode Enabled";
+        addScoreText(modeText, w / 2, h / 2 - 100, infiniteMode ? '#ffaa00' : '#69e4de', 400);
+        addScoreText("Game Restarted", w / 2, h / 2 - 70, '#ffffff', 400);
+        
+        // Restart the game to reset everything
+        restartGame();
+        
+        // Close help menu after mode toggle so game can start running
+        showHelp = false;
+        return;
+      }
+    }
+    
+    // Don't close help menu on clicks - only ESC closes it
     return;
   }
   
@@ -3004,18 +3030,20 @@ const handleKeyDown = (e) => {
   if (showHelp) {
     e.preventDefault();
     
-    // Scroll controls when help is open
+    // Improved scroll controls when help is open
     if (e.code === "ArrowUp" || e.code === "KeyW") {
-      helpScrollOffset = Math.max(0, helpScrollOffset - 30);
+      const scrollSpeed = e.shiftKey ? 75 : 35; // Faster with shift
+      helpScrollOffset = Math.max(0, helpScrollOffset - scrollSpeed);
       return;
     }
     if (e.code === "ArrowDown" || e.code === "KeyS") {
+      const scrollSpeed = e.shiftKey ? 75 : 35; // Faster with shift
       const maxScroll = window.helpMaxScroll || 400;
-      helpScrollOffset = Math.min(maxScroll, helpScrollOffset + 30);
+      helpScrollOffset = Math.min(maxScroll, helpScrollOffset + scrollSpeed);
       return;
     }
     
-    // Close help menu (any other key)
+    // ESC key closes help menu
     totalHelpPauseTime += Date.now() - helpOpenTime;
     showHelp = false;
     helpScrollOffset = 0; // Reset scroll when closing
@@ -3036,6 +3064,8 @@ const handleKeyDown = (e) => {
     }
     return;
   }
+
+
 
   
   // Toggle help
@@ -3126,26 +3156,31 @@ const handleWheel = (e) => {
   
   e.preventDefault();
   
-  // Scroll the help content
-  const scrollAmount = e.deltaY > 0 ? 30 : -30;
+  // Improved scroll with variable speed based on content
+  const baseScrollSpeed = 25;
+  const scrollMultiplier = e.shiftKey ? 2.5 : 1; // Hold shift for faster scroll
+  const scrollAmount = (e.deltaY > 0 ? baseScrollSpeed : -baseScrollSpeed) * scrollMultiplier;
+  
   const maxScroll = window.helpMaxScroll || 400;
   helpScrollOffset = Math.max(0, Math.min(maxScroll, helpScrollOffset + scrollAmount));
 };
 
 // Utility functions for input handling
-const canSummon = () => manaEnergy >= 8;
-const canShield = () => manaEnergy >= 5 && shieldCooldown === 0 && !summonOverheated;
+const canSummon = () => infiniteMode || manaEnergy >= 8;
+const canShield = () => infiniteMode || (manaEnergy >= 5 && shieldCooldown === 0 && !summonOverheated);
 
 const summonFirefly = () => {
   if (!canSummon()) {
     return;
   }
   
-  // Consume mana
-  manaEnergy = Math.max(0, manaEnergy - 8);
+  // Consume mana (only in normal mode)
+  if (!infiniteMode) {
+    manaEnergy = Math.max(0, manaEnergy - 8);
+  }
   
-  // Only overheat when mana hits 0
-  if (manaEnergy === 0 && !summonOverheated) {
+  // Only overheat when mana hits 0 (not in infinite mode)
+  if (!infiniteMode && manaEnergy === 0 && !summonOverheated) {
     summonOverheated = true;
     overheatStunned = true;
     overheatCooldown = 180; // 3 seconds of cooldown (60fps * 3)
@@ -3198,13 +3233,15 @@ const summonFirefly = () => {
 };
 
 const activateShield = (isHoldAction = false) => {
-  if (summonOverheated || manaEnergy < 5) {
+  if (!infiniteMode && (summonOverheated || manaEnergy < 5)) {
     lastOverheatAttempt = Date.now();
     return;
   }
   
-  // Consume mana when shield is activated
-  manaEnergy = Math.max(0, manaEnergy - 5);
+  // Consume mana when shield is activated (only in normal mode)
+  if (!infiniteMode) {
+    manaEnergy = Math.max(0, manaEnergy - 5);
+  }
   
   shieldActive = true;
   lastShieldTime = Date.now();
@@ -3276,7 +3313,6 @@ const restartGame = () => {
   
   // Reset timing
   startTime = Date.now();
-  runStartTime = Date.now();
   lastDeliveryTime = Date.now(); // Reset delivery timer to prevent immediate game over
   totalHelpPauseTime = 0; // Reset help menu pause time
   helpOpenTime = 0;
@@ -3534,45 +3570,137 @@ const drawHelp = () => {
   x.fillText("Nyx Felis and Lampyris", w / 2, h * 0.08);
   x.shadowBlur = 0;
   
-  // Content area setup with tighter spacing
-  const contentStartY = h * 0.08 + 50; // Less space after title
-  const lineHeight = 28; // Increased line height for better readability
+
   
-  const rules = [
-    "CONTROLS:",
-    "- Move mouse to guide Lampyris and collect fireflies",
-    "- Click rapidly to summon fireflies (costs bioluminescence/mana) - spam click for more!",
-    "- Press and hold to activate protective shield (costs bioluminescence/mana)",
-    `- ESC for help menu • M - Audio: ${audioEnabled ? 'ON' : 'OFF'}`,
-    "",
-    "OBJECTIVE:",
-    "- Collect fireflies and deliver them to Nyx Felis in the Sky",
-    "- Firefly Evolution: Basic(green,1pt) → Veteran(purple,3pts) → Elite(gold,8pts) → Legendary(rainbow,20pts)",
-    "- Successfully shield fireflies during color changes to evolve them to higher tiers!",
-    "- Watch delivery pressure timer (bottom) - Green→Yellow→Red shows time until decay", 
-    "- Deliver before timer reaches red (15 second deadline) or curiosity drops!",
-    "- Survive until dawn (3 minutes) and live to see another night",
-    "- Build delivery streaks for score multipliers (up to 300%!) - but streaks break on failure!",
-    "",
-    "DANGER:",
-    "- When Nyx's eyes begin to shift and change colors, be prepared",
-    "- PERFECT timing (white flash) protects AND EVOLVES ALL fireflies in view",
-    "- Good timing (yellow/green) saves most captured fireflies and evolves them",
-    "- Even without shield, some fireflies may escape to safety (but won't evolve)",
-    "- Higher tier fireflies are worth more but move faster - risk vs reward!",
-    "- If Nyx's curiosity reaches -50, she loses interest and you lose!",
-    "",
-    "STRATEGY:",
-    "- Manage bioluminescence (mana) wisely - summoning and shields cost energy",
-    "- Only overheats when bioluminescence (mana) reaches zero - click rapidly!", 
-    "- Master perfect shield timing for maximum protection",
-    "- Risk vs reward: collect more fireflies vs deliver safely before deadline",
-    "- Keep moving! Idle too long and fireflies disperse",
-    "- Evolution Strategy: Protect fireflies long-term for massive point gains!",
-    "- Legendary fireflies (rainbow) are worth 20x basic ones but very risky to keep",
-    "- Protect your delivery streak - losing fireflies or missing deadlines breaks it!",
-    "- Watch both the pressure timer AND Nyx's eyes - timing is everything!"
+  // Content area setup with proper spacing and layout constants
+  const SECTION_MARGIN = 32;        // Space between major sections
+  const HEADER_MARGIN = 20;         // Space after section headers  
+  const LINE_HEIGHT = 30;           // Comfortable line height for readability
+  const BULLET_INDENT = 0;          // Center-aligned, no indent needed
+  
+  const contentStartY = h * 0.08 + 80; // Start below title
+  const lineHeight = LINE_HEIGHT;
+  
+  // Structured content with proper spacing and organization
+  const sections = [
+    {
+      type: 'header',
+      text: 'CONTROLS'
+    },
+    {
+      type: 'content',
+      lines: [
+        '• Move mouse to guide Lampyris and collect fireflies',
+        '• Click rapidly to summon fireflies (costs bioluminescence/mana)', 
+        '• Hold mouse to activate protective shield (costs bioluminescence/mana)',
+        `• ESC for help  •  M to toggle audio: ${audioEnabled ? 'ON' : 'OFF'}`
+      ]
+    },
+
+    {
+      type: 'section-break'
+    },
+    {
+      type: 'header', 
+      text: 'OBJECTIVE'
+    },
+    {
+      type: 'content',
+      lines: [
+        '• Collect fireflies and deliver them to Nyx Felis in the Sky',
+        '• Firefly Evolution System:',
+        '  - Basic (green, 1 point) → Veteran (purple, 3 points)',
+        '  - Elite (gold, 8 points) → Legendary (rainbow, 20 points)',
+        '• Shield fireflies during color changes to evolve them to higher tiers',
+        '• Watch delivery pressure timer - Green→Yellow→Red shows deadline urgency',
+        '• Deliver before timer reaches red (15s deadline) or curiosity drops',
+        '• Survive until dawn (3 minutes) while building delivery streaks for score multipliers (up to 300%)'
+      ]
+    },
+    {
+      type: 'section-break'
+    },
+    {
+      type: 'header',
+      text: 'SHIELD SYSTEM'
+    },
+    {
+      type: 'content', 
+      lines: [
+        '• When Nyx\'s eyes begin to shift colors, be ready to shield',
+        '• PERFECT timing (white flash) protects AND evolves ALL fireflies',
+        '• Good timing (yellow/green) saves most captured fireflies',
+        '• Poor timing: some fireflies may escape (but won\'t evolve)',
+        '• Higher tier fireflies move faster - risk vs reward!',
+        '• Master timing to prevent curiosity from reaching -50 (game over)'
+      ]
+    },
+    {
+      type: 'section-break'
+    },
+    {
+      type: 'header',
+      text: 'STRATEGY TIPS'
+    },
+    {
+      type: 'content',
+      lines: [
+        '• Manage bioluminescence (mana) wisely - summoning and shields cost energy',
+        '• Game overheats when mana reaches zero - click rapidly to recover',
+        '• Risk vs reward: collect more fireflies vs deliver safely before deadline',
+        '• Master perfect shield timing for protection and firefly evolution',
+        '• Keep moving! Idle too long and fireflies will disperse',
+        '• Protect your delivery streak - losing fireflies breaks streaks',
+        '• Watch both pressure timer AND Nyx\'s eyes - timing is everything!',
+        '• Build legendary collections - rainbow fireflies worth 20x basic ones'
+      ]
+    },
+    {
+      type: 'section-break'
+    },
+    {
+      type: 'header',
+      text: 'GAME MODE'
+    },
+    {
+      type: 'mode-indicator'
+    },
+    {
+      type: 'section-break'
+    },
+    {
+      type: 'toggle-switch'
+    },
+    {
+      type: 'section-break'
+    },
+    {
+      type: 'content',
+      lines: [
+        '• Click to switch modes (the game will restart)',
+        '• Normal Mode: Standard gameplay with mana management and time pressure',
+        '• Infinite Mode: Unlimited mana, no time pressure, endless gameplay',
+        '• Infinite Mode: Perfect for casual play, learning mechanics, and firefly evolution mastery',
+        '• Toggle safely resets game to prevent mid-game confusion'
+      ]
+    }
   ];
+  
+  // Convert sections to flat rules array for rendering
+  const rules = [];
+  sections.forEach(section => {
+    if (section.type === 'header') {
+      rules.push(section.text);
+    } else if (section.type === 'content') {
+      section.lines.forEach(line => rules.push(line));
+    } else if (section.type === 'section-break') {
+      rules.push(''); // Add spacing
+    } else if (section.type === 'mode-indicator') {
+      rules.push('__MODE_INDICATOR__'); // Special marker
+    } else if (section.type === 'toggle-switch') {
+      rules.push('__TOGGLE_SWITCH__'); // Special marker
+    }
+  });
   
   // Create clipping region for scrollable content
   x.save();
@@ -3589,27 +3717,116 @@ const drawHelp = () => {
     if (y > contentTop - 40 && y < contentTop + contentHeight + 40) {
       x.textAlign = "center";
       
-      if (rule === "CONTROLS:" || rule === "OBJECTIVE:" || rule === "DANGER:" || rule === "STRATEGY:") {
-        // Section headers - dusty pastel orange, minimal glow
-        setFill("#ce6d54");
-        x.shadowColor = "#ce6d54";
-        x.shadowBlur = 1; // Very minimal glow
-        x.font = `bold 22px ${FONTS.body}`;
+      // Section headers - clean typography without background
+      if (rule === "CONTROLS" || rule === "INFINITE MODE" || rule === "OBJECTIVE" || 
+          rule === "SHIELD SYSTEM" || rule === "STRATEGY TIPS" || rule === "GAME MODE") {
+        
+        // Header text with clean styling
+        setFill("#e8b89a");
+        x.shadowColor = "rgba(232, 184, 154, 0.3)";
+        x.shadowBlur = 3;
+        x.font = `bold 20px ${FONTS.body}`;
         x.fillText(rule, w / 2, y);
-      } else if (rule.startsWith("- ")) {
-        // Bullet points - clean white, no glow
-        setFill("#ffffff");
         x.shadowBlur = 0;
+        
+      } else if (rule === "__MODE_INDICATOR__") {
+        // Current mode indicator
+        setFill(infiniteMode ? "#ffaa00" : "#69e4de");
+        x.font = `16px ${FONTS.body}`;
+        x.shadowColor = "rgba(0,0,0,0.8)";
+        x.shadowBlur = 4;
+        const currentModeText = infiniteMode ? "INFINITE MODE ACTIVE" : "NORMAL MODE ACTIVE";
+        x.fillText(currentModeText, w / 2, y);
+        x.shadowBlur = 0;
+        
+      } else if (rule === "__TOGGLE_SWITCH__") {
+        // Toggle switch design with proper spacing
+        const switchWidth = 200;
+        const switchHeight = 40;
+        const switchX = w / 2;
+        const switchY = y; // Use normal line position for even spacing
+        
+        // Check if mouse is hovering over switch
+        const isSwitchHovering = mx >= switchX - switchWidth/2 && 
+                                 mx <= switchX + switchWidth/2 &&
+                                 my >= switchY - switchHeight/2 && 
+                                 my <= switchY + switchHeight/2;
+        
+        // Draw switch track (background) - darker for better contrast
+        const trackColor = "#1a1a1a";
+        setFill(trackColor);
+        x.fillRect(switchX - switchWidth/2, switchY - switchHeight/2, switchWidth, switchHeight);
+        
+        // Switch track border - brighter for visibility
+        setStroke("#555555");
+        setLineWidth(2);
+        x.strokeRect(switchX - switchWidth/2, switchY - switchHeight/2, switchWidth, switchHeight);
+        
+        // Draw switch button (slides left/right)
+        const buttonWidth = switchWidth / 2 - 6;
+        const buttonHeight = switchHeight - 6;
+        const buttonX = infiniteMode ? 
+          switchX + switchWidth/4 : // Right side for infinite mode
+          switchX - switchWidth/4;  // Left side for normal mode
+        
+        // Better contrast button colors
+        const buttonColor = infiniteMode ? "#cc7700" : "#2a6b63";
+        const hoverButtonColor = isSwitchHovering ? 
+          (infiniteMode ? "#ff9900" : "#3a8b7a") : buttonColor;
+        
+        x.shadowColor = buttonColor;
+        x.shadowBlur = isSwitchHovering ? 12 : 8;
+        setFill(hoverButtonColor);
+        x.fillRect(buttonX - buttonWidth/2, switchY - buttonHeight/2, buttonWidth, buttonHeight);
+        x.shadowBlur = 0;
+        
+        // Switch labels with bold text, letter spacing, and improved contrast
+        x.font = `bold 13px ${FONTS.body}`;
+        
+        // Normal label - white text when active (teal background), black when inactive
+        setFill(infiniteMode ? "#cccccc" : "#ffffff");
+        x.fillText("NORMAL", switchX - switchWidth/4, switchY + 4);
+        
+        // Infinite label - white text when active (orange background), black when inactive
+        setFill(infiniteMode ? "#ffffff" : "#cccccc");
+        x.fillText("INFINITE", switchX + switchWidth/4, switchY + 4);
+        
+        // Store switch bounds for click detection
+        window.helpModeToggle = {
+          x: switchX,
+          y: switchY,
+          width: switchWidth,
+          height: switchHeight
+        };
+        
+      } else if (rule.startsWith("• ")) {
+        // Content bullets - improved readability  
+        setFill("#f0f0f0");
+        x.shadowColor = "rgba(0, 0, 0, 0.4)";
+        x.shadowBlur = 1;
         x.font = `16px ${FONTS.body}`;
         x.fillText(rule, w / 2, y);
+        x.shadowBlur = 0;
+        
+      } else if (rule.startsWith("  - ")) {
+        // Sub-bullets with same styling as regular bullets
+        setFill("#f0f0f0");
+        x.shadowColor = "rgba(0, 0, 0, 0.4)";
+        x.shadowBlur = 1;
+        x.font = `16px ${FONTS.body}`;
+        x.fillText(rule, w / 2, y);
+        x.shadowBlur = 0;
+        
       } else if (rule !== "") {
-        // Description text - same size as bullets, soft gray
-        setFill("#cccccc");
-        x.shadowBlur = 0;
+        // Description text - balanced contrast
+        setFill("#d0d0d0");
+        x.shadowColor = "rgba(0, 0, 0, 0.3)";
+        x.shadowBlur = 1;
         x.font = `16px ${FONTS.body}`;
         x.fillText(rule, w / 2, y);
+        x.shadowBlur = 0;
       }
-      x.shadowBlur = 0;
+      // Empty strings create spacing - no rendering needed
     }
   });
   
@@ -3625,64 +3842,121 @@ const drawHelp = () => {
     window.helpMaxScroll = maxScroll;
   }
   
-  // Show scroll indicators if content is scrollable
+  // Improved scroll indicators with better visibility and positioning
   if (maxScroll > 0) {
     x.textAlign = "center";
     x.font = `14px ${FONTS.body}`;
     
+    // Scroll progress indicator
+    const scrollBarWidth = 4;
+    const scrollBarHeight = contentHeight - 40;
+    const scrollBarX = w - 30;
+    const scrollBarY = contentTop + 20;
+    
+    // Background track
+    setFill("rgba(255, 255, 255, 0.1)");
+    x.fillRect(scrollBarX, scrollBarY, scrollBarWidth, scrollBarHeight);
+    
+    // Scroll thumb
+    const thumbHeight = Math.max(20, (contentHeight / (maxScroll + contentHeight)) * scrollBarHeight);
+    const thumbY = scrollBarY + (helpScrollOffset / maxScroll) * (scrollBarHeight - thumbHeight);
+    
+    setFill("rgba(255, 255, 255, 0.4)");
+    x.fillRect(scrollBarX, thumbY, scrollBarWidth, thumbHeight);
+    
+    // Scroll up indicator
     if (helpScrollOffset > 0) {
-      // Background for scroll up text
-      const upText = "↑ Scroll up (Arrow keys/Mouse wheel)";
+      const upText = "↑ More above";
       const upMetrics = x.measureText(upText);
-      const upY = contentTop - 10;
+      const upY = contentTop - 5;
       
-      // Draw semi-transparent background
-      setFill("rgba(16, 16, 32, 0.8)");
-      x.fillRect(w / 2 - upMetrics.width / 2 - 10, upY - 18, upMetrics.width + 20, 24);
+      // Gradient background
+      const gradient = x.createLinearGradient(0, upY - 20, 0, upY + 5);
+      gradient.addColorStop(0, "rgba(16, 16, 32, 0.9)");
+      gradient.addColorStop(1, "rgba(16, 16, 32, 0.3)");
       
-      // Draw text with enhanced shadow
+      setFill(gradient);
+      x.fillRect(w / 2 - upMetrics.width / 2 - 15, upY - 20, upMetrics.width + 30, 25);
+      
+      // Border
+      setStroke("rgba(127, 194, 164, 0.3)");
+      setLineWidth(1);
+      x.strokeRect(w / 2 - upMetrics.width / 2 - 15, upY - 20, upMetrics.width + 30, 25);
+      
+      // Text
       setFill("#7fc2a4");
       x.shadowColor = "rgba(0, 0, 0, 0.8)";
-      x.shadowBlur = 3;
-      x.shadowOffsetY = 1;
-      x.fillText(upText, w / 2, upY);
-    }
-    if (helpScrollOffset < maxScroll) {
-      // Background for scroll down text
-      const downText = "↓ Scroll down (Arrow keys/Mouse wheel)";
-      const downMetrics = x.measureText(downText);
-      const downY = contentTop + contentHeight + 20;
-      
-      // Draw semi-transparent background
-      setFill("rgba(16, 16, 32, 0.8)");
-      x.fillRect(w / 2 - downMetrics.width / 2 - 10, downY - 18, downMetrics.width + 20, 24);
-      
-      // Draw text with enhanced shadow
-      setFill("#7fc2a4");
-      x.shadowColor = "rgba(0, 0, 0, 0.8)";
-      x.shadowBlur = 3;
-      x.shadowOffsetY = 1;
-      x.fillText(downText, w / 2, downY);
+      x.shadowBlur = 2;
+      x.fillText(upText, w / 2, upY - 5);
     }
     
-    // Reset shadow effects
+    // Scroll down indicator  
+    if (helpScrollOffset < maxScroll) {
+      const downText = "↓ More below";
+      const downMetrics = x.measureText(downText);
+      const downY = contentTop + contentHeight + 15;
+      
+      // Gradient background
+      const gradient = x.createLinearGradient(0, downY - 5, 0, downY + 20);
+      gradient.addColorStop(0, "rgba(16, 16, 32, 0.3)");
+      gradient.addColorStop(1, "rgba(16, 16, 32, 0.9)");
+      
+      setFill(gradient);
+      x.fillRect(w / 2 - downMetrics.width / 2 - 15, downY - 5, downMetrics.width + 30, 25);
+      
+      // Border
+      setStroke("rgba(127, 194, 164, 0.3)");
+      setLineWidth(1);
+      x.strokeRect(w / 2 - downMetrics.width / 2 - 15, downY - 5, downMetrics.width + 30, 25);
+      
+      // Text
+      setFill("#7fc2a4");
+      x.shadowColor = "rgba(0, 0, 0, 0.8)";
+      x.shadowBlur = 2;
+      x.fillText(downText, w / 2, downY + 10);
+    }
+    
+    // Reset effects
     x.shadowBlur = 0;
     x.shadowOffsetY = 0;
   }
   
-  // Close instruction - cleaner styling
+
+
+  // Close instruction with better styling and spacing
   x.textAlign = "center";
-  setFill("#9a9695");
-  x.shadowColor = "#9a9695";
-  x.shadowBlur = 1;
+  
+  // Background bar for better readability
+  const closeText = "Press ESC to close";
   x.font = `18px ${FONTS.body}`;
-  x.fillText("Press ESC or click to close", w / 2, h - 50);
+  const closeMetrics = x.measureText(closeText);
+  const closeY = h - 40;
+  
+  // Subtle background
+  const gradient = x.createLinearGradient(w/2 - 150, closeY - 15, w/2 + 150, closeY + 15);
+  gradient.addColorStop(0, "rgba(0, 0, 0, 0.2)");
+  gradient.addColorStop(0.5, "rgba(0, 0, 0, 0.6)");
+  gradient.addColorStop(1, "rgba(0, 0, 0, 0.2)");
+  
+  setFill(gradient);
+  x.fillRect(w/2 - closeMetrics.width/2 - 20, closeY - 18, closeMetrics.width + 40, 30);
+  
+  // Border
+  setStroke("rgba(154, 150, 149, 0.3)");
+  setLineWidth(1);
+  x.strokeRect(w/2 - closeMetrics.width/2 - 20, closeY - 18, closeMetrics.width + 40, 30);
+  
+  // Text with improved contrast
+  setFill("#e0ddd9");
+  x.shadowColor = "rgba(0, 0, 0, 0.8)";
+  x.shadowBlur = 2;
+  x.fillText(closeText, w / 2, closeY);
   x.shadowBlur = 0;
   
   x.restore();
 };
 
-// Draw unified game over/victory screen
+// Draw unified game over/victory screen with consistent styling
 const drawGameOverScreen = () => {
   if (!gameOver && !gameWon) return;
   
@@ -3710,221 +3984,102 @@ const drawGameOverScreen = () => {
   x.save();
   x.textAlign = "center";
   
-  let currentY = h / 2 - 120;
+  // Start higher up for better laptop compatibility
+  let currentY = h * 0.15;
+  
+  // Define consistent styling
+  const isWin = gameWon;
+  const titleColor = isWin ? "#22aa22" : "#aa2222";
+  const accentColor = isWin ? "#44dd44" : "#dd4444";
+  
+  // Consistent line spacing
+  const LINE_SPACING = 35;
+  const SECTION_SPACING = 50;
   
   // Title
-  if (gameWon) {
-    setFill("#22aa22");
-    x.font = `52px ${FONTS.title}`;
-    x.shadowColor = "#22aa22";
-    x.shadowBlur = 12;
-    x.fillText("DAWN BREAKS!", w / 2, currentY);
-  } else {
-    setFill("#aa2222");
-    x.font = `52px ${FONTS.title}`;
-    x.shadowColor = "#aa2222";
-    x.shadowBlur = 12;
-    x.fillText("THE LIGHT FADES", w / 2, currentY);
-  }
+  setFill(titleColor);
+  x.font = `48px ${FONTS.title}`;
+  x.shadowColor = titleColor;
+  x.shadowBlur = 12;
+  x.fillText(isWin ? "DAWN BREAKS!" : "THE LIGHT FADES", w / 2, currentY);
   x.shadowBlur = 0;
-  currentY += 70;
+  currentY += SECTION_SPACING;
   
   // Subtitle
   setFill("#bbbbbb");
-  x.font = `20px ${FONTS.body}`;
-  if (gameWon) {
-    x.fillText("You guided fireflies through the eternal night", w / 2, currentY);
-  } else {
-    x.fillText("The darkness has claimed the light", w / 2, currentY);
-  }
-  currentY += 60;
+  x.font = `18px ${FONTS.body}`;
+  x.fillText(isWin ? "You guided fireflies through the eternal night" : "The darkness has claimed the light", w / 2, currentY);
+  currentY += SECTION_SPACING;
   
-  // Core stats - same for both win/loss
-  setFill("#ffffff");
-  x.font = `24px ${FONTS.body}`;
+  // Core stats with consistent styling map
+  const stats = [
+    { label: "Fireflies Delivered", value: totalCollected, color: "#ffffff" },
+    { label: "Fireflies Lost", value: totalLost, color: "#ffaa66", show: totalLost > 0 },
+    { label: "Time Survived", value: timeString, color: "#66aaff" },
+    { label: "Best Streak", value: bestStreak, color: "#99ff99", show: bestStreak > 1 }
+  ];
   
-  x.fillText(`Fireflies Delivered: ${totalCollected}`, w / 2, currentY);
-  currentY += 40;
+  x.font = `22px ${FONTS.body}`;
+  stats.forEach(stat => {
+    if (stat.show === false) return;
+    setFill(stat.color);
+    x.fillText(`${stat.label}: ${stat.value}`, w / 2, currentY);
+    currentY += LINE_SPACING;
+  });
   
-  if (gameWon || totalLost > 0) {
-    setFill("#ffaa66");
-    x.fillText(`Fireflies Lost: ${totalLost}`, w / 2, currentY);
-    currentY += 40;
-  }
+  currentY += 10;
   
-  setFill("#66aaff");
-  x.fillText(`Time Survived: ${timeString}`, w / 2, currentY);
-  currentY += 50;
-  
-  // Shield timing statistics
+  // Shield performance summary (simplified)
   const totalShields = shieldStats.perfect + shieldStats.great + shieldStats.good + shieldStats.missed;
-  if (totalShields > 0) {
-    setFill("#ffffff");
-    x.font = `22px ${FONTS.body}`;
-    x.fillText("Shield Timing Performance:", w / 2, currentY);
-    currentY += 35;
-    
-    x.font = `18px ${FONTS.body}`;
-    
-    if (shieldStats.perfect > 0) {
-      setFill("#ffffff");
-      x.fillText(`Perfect: ${shieldStats.perfect}`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    if (shieldStats.great > 0) {
-      setFill("#66ccff");
-      x.fillText(`Great: ${shieldStats.great}`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    if (shieldStats.good > 0) {
-      setFill("#99ff99");
-      x.fillText(`Good: ${shieldStats.good}`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    if (shieldStats.missed > 0) {
-      setFill("#ff9999");
-      x.fillText(`Missed: ${shieldStats.missed}`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    // Calculate accuracy percentage
+  if (totalShields > 3) {
     const accurateShields = shieldStats.perfect + shieldStats.great + shieldStats.good;
     const accuracy = Math.round((accurateShields / totalShields) * 100);
     
     setFill("#cccccc");
-    x.font = `16px ${FONTS.body}`;
-    x.fillText(`Accuracy: ${accuracy}% (${accurateShields}/${totalShields})`, w / 2, currentY);
-    currentY += 20;
-    
-    // Performance assessment
-    const perfectRate = Math.round((shieldStats.perfect / totalShields) * 100);
-    let assessment = "";
-    let assessmentColor = "#cccccc";
-    
-    if (perfectRate >= 80) {
-      assessment = "Legendary Guardian!";
-      assessmentColor = "#ffffff";
-    } else if (perfectRate >= 60) {
-      assessment = "Master of Timing";
-      assessmentColor = "#66ccff";
-    } else if (perfectRate >= 40) {
-      assessment = "Skilled Protector";
-      assessmentColor = "#99ff99";
-    } else if (accuracy >= 80) {
-      assessment = "Reliable Shield";
-      assessmentColor = "#ffaa66";
-    } else if (accuracy >= 60) {
-      assessment = "Learning Guardian";
-      assessmentColor = "#ffccaa";
-    }
-    
-    if (assessment) {
-      setFill(assessmentColor);
-      x.font = `14px ${FONTS.body}`;
-      x.fillText(assessment, w / 2, currentY);
-      currentY += 15;
-    }
-    
-    currentY += 20;
+    x.font = `18px ${FONTS.body}`;
+    x.fillText(`Shield Accuracy: ${accuracy}% (${accurateShields}/${totalShields})`, w / 2, currentY);
+    currentY += LINE_SPACING;
   }
   
-  // Firefly tier statistics
+  // High-tier fireflies summary (only if noteworthy)
   const totalHighTier = tierStats.veteran + tierStats.elite + tierStats.legendary;
   if (totalHighTier > 0) {
-    setFill("#ffffff");
-    x.font = `22px ${FONTS.body}`;
-    x.fillText("Firefly Evolution Mastery:", w / 2, currentY);
-    currentY += 35;
+    const highTierText = [];
+    if (tierStats.legendary > 0) highTierText.push(`${tierStats.legendary} Legendary`);
+    if (tierStats.elite > 0) highTierText.push(`${tierStats.elite} Elite`);
+    if (tierStats.veteran > 0) highTierText.push(`${tierStats.veteran} Veteran`);
     
+    setFill("#ffcc00");
     x.font = `18px ${FONTS.body}`;
-    
-    if (tierStats.legendary > 0) {
-      setFill("#ff00ff");
-      x.fillText(`Legendary Delivered: ${tierStats.legendary} (${tierStats.legendary * 20}pts)`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    if (tierStats.elite > 0) {
-      setFill("#ffdd00");
-      x.fillText(`Elite Delivered: ${tierStats.elite} (${tierStats.elite * 8}pts)`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    if (tierStats.veteran > 0) {
-      setFill("#9966ff");
-      x.fillText(`Veteran Delivered: ${tierStats.veteran} (${tierStats.veteran * 3}pts)`, w / 2, currentY);
-      currentY += 25;
-    }
-    
-    // Show creation stats
-    const totalCreated = tierStats.created.veteran + tierStats.created.elite + tierStats.created.legendary;
-    if (totalCreated > 0) {
-      setFill("#cccccc");
-      x.font = `16px ${FONTS.body}`;
-      x.fillText(`Evolved: ${tierStats.created.veteran}V ${tierStats.created.elite}E ${tierStats.created.legendary}L`, w / 2, currentY);
-      currentY += 20;
-    }
-    
-    // Evolution mastery assessment
-    let evolutionTitle = "";
-    let evolutionColor = "#cccccc";
-    
-    if (tierStats.legendary >= 5) {
-      evolutionTitle = "Rainbow Master!";
-      evolutionColor = "#ff00ff";
-    } else if (tierStats.legendary >= 2) {
-      evolutionTitle = "Legendary Protector";
-      evolutionColor = "#ff66ff";
-    } else if (tierStats.elite >= 3) {
-      evolutionTitle = "Elite Guardian";
-      evolutionColor = "#ffdd00";
-    } else if (tierStats.veteran >= 5) {
-      evolutionTitle = "Veteran Shepherd";
-      evolutionColor = "#9966ff";
-    }
-    
-    if (evolutionTitle) {
-      setFill(evolutionColor);
-      x.font = `14px ${FONTS.body}`;
-      x.fillText(evolutionTitle, w / 2, currentY);
-      currentY += 15;
-    }
-    
-    currentY += 20;
+    x.fillText(`Evolved Fireflies: ${highTierText.join(", ")}`, w / 2, currentY);
+    currentY += LINE_SPACING;
   }
   
-  // Final score - use consistent "curiosity" terminology
-  if (gameWon) {
-    setFill("#44dd44");
-    x.font = `32px ${FONTS.title}`;
-    x.shadowColor = "#44dd44";
-    x.shadowBlur = 8;
-    x.fillText(`Final Curiosity: ${finalScore}`, w / 2, currentY);
-    x.shadowBlur = 0;
-    currentY += 30;
-    setFill("#88dd88");
-    x.font = `16px ${FONTS.body}`;
-    x.fillText("Nyx remains fascinated by your light!", w / 2, currentY);
-  } else {
-    setFill("#dd4444");
-    x.font = `32px ${FONTS.title}`;
-    x.shadowColor = "#dd4444";
-    x.shadowBlur = 8;
-    x.fillText(`Curiosity Lost: ${Math.abs(score)}`, w / 2, currentY);
-    x.shadowBlur = 0;
-    currentY += 30;
-    setFill("#dd8888");
-    x.font = `16px ${FONTS.body}`;
-    x.fillText("Nyx has grown bored with the darkness", w / 2, currentY);
-  }
+  currentY += SECTION_SPACING;
   
-  currentY += 80;
+  // Final score with consistent styling
+  setFill(accentColor);
+  x.font = `28px ${FONTS.title}`;
+  x.shadowColor = accentColor;
+  x.shadowBlur = 8;
+  x.fillText(`Final Score: ${isWin ? finalScore : score}`, w / 2, currentY);
+  x.shadowBlur = 0;
+  currentY += 30;
+  
+  // Score explanation
+  setFill("#cccccc");
+  x.font = `14px ${FONTS.body}`;
+  x.fillText("Points earned from delivering fireflies (Basic: 1pt, Veteran: 3pts, Elite: 8pts, Legendary: 20pts)", w / 2, currentY);
+  currentY += 25;
+  
+  // Flavor text
+  setFill(isWin ? "#88dd88" : "#dd8888");
+  x.font = `16px ${FONTS.body}`;
+  x.fillText(isWin ? "Nyx remains fascinated by your light!" : "Nyx has grown bored with the darkness", w / 2, currentY);
+  currentY += SECTION_SPACING;
   
   // Restart instruction
-  setFill("#888888");
+  setFill("#aaaaaa");
   x.font = `18px ${FONTS.body}`;
   x.fillText("Click to play again", w / 2, currentY);
   
@@ -3954,76 +4109,101 @@ const drawMainUI = () => {
   
   // === TOP RIGHT: Time ===
   if (startTime && !gameOver && !gameWon) {
+    x.textAlign = "right";
+    
     // Calculate elapsed time, excluding time spent in help menu
     let elapsed = Date.now() - startTime - totalHelpPauseTime;
-    // If help menu is currently open, subtract that time too
     if (showHelp) {
       elapsed -= (Date.now() - helpOpenTime);
     }
-    const remaining = Math.max(0, NIGHT_DURATION - elapsed);
-    const minutes = Math.floor(remaining / 60000);
-    const seconds = Math.floor((remaining % 60000) / 1000);
-    const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
     
-    // Color based on time remaining
-    const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
-    setFill(timeColor);
-    x.font = `22px ${FONTS.body}`;
+    // Ensure elapsed is never negative (safety check)
+    elapsed = Math.max(0, elapsed);
     
-    // Draw time at fixed position (right-aligned)
-    x.textAlign = "right";
-    x.fillText(timeText, w - 20, 30);
-    
-    // Draw label at fixed position (right-aligned, offset by fixed amount)
-    x.fillText("Time: ", w - 80, 30); // Fixed offset of 80px from right edge
+    // Simple timer logic - dynamic switch based on mode
+    if (infiniteMode) {
+      // Infinite mode: Count up from 0
+      const minutes = Math.floor(elapsed / 60000);
+      const seconds = Math.floor((elapsed % 60000) / 1000);
+      const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      
+      setFill("#88ddff");
+      x.font = `20px ${FONTS.body}`;
+      x.fillText(timeText, w - 20, 30);
+    } else {
+      // Normal mode: Count down from 3:00
+      const remaining = Math.max(0, NIGHT_DURATION - elapsed);
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      
+      // Color based on time remaining
+      const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
+      setFill(timeColor);
+      x.font = `20px ${FONTS.body}`;
+      x.fillText(timeText, w - 20, 30);
+    }
   }
   
   // === LEFT SIDE: Mana and Shield (aligned with time) ===
   x.textAlign = "left";
   let leftY = 30; // Start aligned with time display on right
   
-  // Mana display (always show) - use fixed cyan for readability
-  setFill("#00dddd"); // Cyan color for good contrast against dark sky
-  x.font = `18px ${FONTS.body}`;
-  x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, leftY);
-  leftY += 25; // Tighter spacing
-  
-  // Shield status
-  if (shieldActive) {
-    setFill("#99ccff");
+  if (infiniteMode) {
+    // Infinite mode display
+    setFill("#00dddd");
     x.font = `18px ${FONTS.body}`;
-    x.fillText("SHIELD ACTIVE", 20, leftY);
-  } else if (shieldCharging) {
-    // Pulsing yellow to show charging state
-    const chargePulse = sin(Date.now() * 0.01) * 0.3 + 0.7;
-    setFill(`rgba(255, 255, 0, ${chargePulse})`);
-    x.font = `18px ${FONTS.body}`;
-    x.fillText("SHIELD CHARGING...", 20, leftY);
-  } else if (shieldCooldown > 0) {
-    setFill("#cccccc");
-    x.font = `18px ${FONTS.body}`;
-    x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
-  } else if (summonOverheated || manaEnergy < 5) {
-    setFill("#ff6666");
-    x.font = `18px ${FONTS.body}`;
-    x.fillText(manaEnergy <= 0 ? "OUT OF MANA" : "LOW MANA", 20, leftY);
+    x.fillText("Mana: ∞", 20, leftY);
+    leftY += 25;
+    
+    setFill("#99ff99");
+    x.fillText("Shield: ∞", 20, leftY);
+    leftY += 25;
   } else {
-    let shieldColor = "#99ff99";
-    let shieldText = "Shield: Ready";
-    
-    if (manaEnergy <= 20) {
-      shieldColor = "#ff9966";
-      shieldText = "Shield: LOW POWER";
-    } else if (manaEnergy <= 5) {
-      shieldColor = "#ff6666";
-      shieldText = "Shield: CRITICAL";
-    }
-    
-    setFill(shieldColor);
+    // Normal mode display
+    // Mana display (always show) - use fixed cyan for readability
+    setFill("#00dddd"); // Cyan color for good contrast against dark sky
     x.font = `18px ${FONTS.body}`;
-    x.fillText(shieldText, 20, leftY);
+    x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, leftY);
+    leftY += 25; // Tighter spacing
+    
+    // Shield status
+    if (shieldActive) {
+      setFill("#99ccff");
+      x.font = `18px ${FONTS.body}`;
+      x.fillText("SHIELD ACTIVE", 20, leftY);
+    } else if (shieldCharging) {
+      // Pulsing yellow to show charging state
+      const chargePulse = sin(Date.now() * 0.01) * 0.3 + 0.7;
+      setFill(`rgba(255, 255, 0, ${chargePulse})`);
+      x.font = `18px ${FONTS.body}`;
+      x.fillText("SHIELD CHARGING...", 20, leftY);
+    } else if (shieldCooldown > 0) {
+      setFill("#cccccc");
+      x.font = `18px ${FONTS.body}`;
+      x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
+    } else if (summonOverheated || manaEnergy < 5) {
+      setFill("#ff6666");
+      x.font = `18px ${FONTS.body}`;
+      x.fillText(manaEnergy <= 0 ? "OUT OF MANA" : "LOW MANA", 20, leftY);
+    } else {
+      let shieldColor = "#99ff99";
+      let shieldText = "Shield: Ready";
+      
+      if (manaEnergy <= 20) {
+        shieldColor = "#ff9966";
+        shieldText = "Shield: LOW POWER";
+      } else if (manaEnergy <= 5) {
+        shieldColor = "#ff6666";
+        shieldText = "Shield: CRITICAL";
+      }
+      
+      setFill(shieldColor);
+      x.font = `18px ${FONTS.body}`;
+      x.fillText(shieldText, 20, leftY);
+    }
+    leftY += 25; // Tighter spacing
   }
-  leftY += 25; // Tighter spacing
   
   // Streak display (when active) - now below shield
   if (deliveryStreak >= 2) {
@@ -4122,16 +4302,18 @@ const drawMainUI = () => {
   }
   
   // === BOTTOM CENTER: Delivery Pressure Timer (Like Rhythm Games) ===
-  const barWidth = Math.min(w * 0.7, 600);
-  const barHeight = 20;
-  const barX = (w - barWidth) / 2;
-  const barY = h - 70;
-  
-  // Calculate time pressure - how close to curiosity decay (15 seconds max)
-  const timeSinceDelivery = lastDeliveryTime ? (Date.now() - lastDeliveryTime) : (Date.now() - (startTime || Date.now()));
-  const timeUntilDecay = Math.max(0, 15000 - timeSinceDelivery); // 15 seconds to deliver
-  const pressurePercent = timeUntilDecay / 15000; // 1.0 = safe, 0.0 = critical
-  const fillWidth = barWidth * pressurePercent;
+  // Only show pressure timer in normal mode
+  if (!infiniteMode) {
+    const barWidth = Math.min(w * 0.7, 600);
+    const barHeight = 20;
+    const barX = (w - barWidth) / 2;
+    const barY = h - 70;
+    
+    // Calculate time pressure - how close to curiosity decay (15 seconds max)
+    const timeSinceDelivery = lastDeliveryTime ? (Date.now() - lastDeliveryTime) : (Date.now() - (startTime || Date.now()));
+    const timeUntilDecay = Math.max(0, 15000 - timeSinceDelivery); // 15 seconds to deliver
+    const pressurePercent = timeUntilDecay / 15000; // 1.0 = safe, 0.0 = critical
+    const fillWidth = barWidth * pressurePercent;
   
   // Color based on delivery pressure (traffic light system)
   let barColor, glowColor, shadowColor, particleColor;
@@ -4239,12 +4421,14 @@ const drawMainUI = () => {
                    pressurePercent > 0.3 ? "Hurry!" : "CRITICAL!";
   x.fillText(labelText, barX + barWidth/2, barY - 15);
   x.restore();
+  } // End infinite mode check
 
   // === BOTTOM RIGHT: Controls hint ===
   x.textAlign = "right";
   setFill("#666666");
   x.font = `14px ${FONTS.body}`;
-  x.fillText(`Press 'ESC' for help • 'M' - Audio: ${audioEnabled ? 'ON' : 'OFF'}`, w - 20, h - 20);
+  const modeIndicator = infiniteMode ? " • Infinite Mode" : "";
+  x.fillText(`Press 'ESC' for help • 'M' - Audio: ${audioEnabled ? 'ON' : 'OFF'}${modeIndicator}`, w - 20, h - 20);
   
   x.restore();
 };
@@ -4282,8 +4466,8 @@ function gameLoop() {
       fadeBgMusic(0.25, 2); // Boost music volume for celebration
     }
     
-    // Nyx's Curiosity Decay - the core risk mechanic
-    if (!gameOver && !gameWon && startTime) {
+    // Nyx's Curiosity Decay - the core risk mechanic (only in normal mode)
+    if (!infiniteMode && !gameOver && !gameWon && startTime) {
       const timeSinceLastDelivery = Date.now() - (lastDeliveryTime || startTime);
       
       // IMMEDIATE GAME OVER when delivery deadline is missed (15+ seconds without delivery)
@@ -4315,12 +4499,15 @@ function gameLoop() {
       const baseSpawnInterval = Math.max(1500, 4000 - (minutesPlayed * 500));
       const spawnInterval = baseSpawnInterval / (1 + deliveryStreak * 0.1); // Streaks make it harder
       
-      if (now - lastSpawnTime > spawnInterval && otherFireflies.length < CFG.maxFireflies) {
+      // Set firefly cap based on mode
+      const maxFireflies = infiniteMode ? 18 : CFG.maxFireflies; // Cap at 18 for infinite mode
+      
+      if (now - lastSpawnTime > spawnInterval && otherFireflies.length < maxFireflies) {
         spawnFirefly();
         lastSpawnTime = now;
         
-        // Chance for bonus firefly at higher difficulties
-        if (minutesPlayed > 2 && r() < minutesPlayed * 0.05) {
+        // Chance for bonus firefly at higher difficulties (only in normal mode)
+        if (!infiniteMode && minutesPlayed > 2 && r() < minutesPlayed * 0.05) {
           spawnFirefly();
         }
       }
@@ -4486,7 +4673,6 @@ const initGame = () => {
   
   // Initialize game systems
   startTime = Date.now();
-  runStartTime = Date.now();
   
   // Initialize visual systems
   initStars();
