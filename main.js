@@ -574,7 +574,7 @@ const HOLD_THRESHOLD = 150; // ms - anything longer is considered a "hold"
 let score = 0, gameStarted = true, gameOver = false;
 let gameOverTime = null; // Stores the time when game ended for frozen display
 let totalCollected = 0, totalLost = 0;
-let deliveryStreak = 0, bestStreak = 0; // New streak tracking
+let shieldStreak = 0, bestStreak = 0; // Shield-based streak tracking
 let startTime = null;
 let shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
 let tierStats = { basic: 0, veteran: 0, elite: 0, legendary: 0, created: { veteran: 0, elite: 0, legendary: 0 }, lost: { veteran: 0, elite: 0, legendary: 0 } };
@@ -605,20 +605,15 @@ const FIREBASE_CONFIG = typeof process !== 'undefined' && process.env ? {
   appId: process.env.FIREBASE_APP_ID
 } : null; // Falls back to localStorage when env vars not available
 
-// Initialize Firebase
 let firebaseEnabled = false;
 if (FIREBASE_CONFIG && typeof firebase !== 'undefined') {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     window.db = firebase.firestore();
     firebaseEnabled = true;
-    console.log('🔥 Firebase initialized - live leaderboard enabled!');
   } catch (error) {
-    console.warn('Firebase initialization failed, using localStorage:', error);
     firebaseEnabled = false;
   }
-} else {
-  console.log('📱 Using localStorage leaderboard (Firebase not configured)');
 }
 
 // Nyx's curiosity tracking
@@ -642,9 +637,11 @@ let tutorialStep4Timer = 0; // Track time spent on step 4
 let tutorialMissedShield = false; // Track if player missed a shield during tutorial
 let showHelp = false;
 let helpScrollOffset = 0; // For scrolling help content
-let showTutorialElements = false; // Show ring and count during tutorial only
-let helpOpenTime = 0; // When help menu was opened
-let totalHelpPauseTime = 0; // Total time spent with help menu open
+let showTutorialElements = false;
+let helpOpenTime = 0;
+let totalHelpPauseTime = 0;
+let leaderboardOpenTime = 0;
+let totalLeaderboardPauseTime = 0;
 
 // Game objects
 let particles = [];
@@ -664,8 +661,8 @@ let lastSummonTime = 0;
 const initStars = () => {
   stars = [];
   
-  // Regular stars (fewer, smaller)
-  for (let i = 0; i < 100; i++) {
+  // Regular stars (more for richer background)
+  for (let i = 0; i < 150; i++) {
     const starType = r(); // Random number to determine star behavior
     let twinkleSpeed, baseAlpha;
     
@@ -694,8 +691,8 @@ const initStars = () => {
     });
   }
   
-  // Add tiny dust particles
-  for (let i = 0; i < 200; i++) {
+  // Add tiny dust particles (more for richer atmosphere)
+  for (let i = 0; i < 300; i++) {
     stars.push({
       x: r() * w,
       y: r() * h,
@@ -1361,6 +1358,8 @@ const handleShieldProtection = (capturedFireflies, now) => {
     shieldPerfectFlash = 60; // 1 second white flash
     playTone(800, 0.3, 0.05); // High rewarding tone
     shieldStats.perfect++;
+    shieldStreak++;
+    bestStreak = Math.max(bestStreak, shieldStreak);
     
   } else if (flashPhase >= CFG.flash2 && flashPhase <= CFG.flash3 + 10) {
     // GREAT: During 2nd flash through early 3rd flash (160-210)
@@ -1370,6 +1369,8 @@ const handleShieldProtection = (capturedFireflies, now) => {
     shieldSuccessFlash = 30; // Brief blue flash
     playTone(600, 0.2, 0.08); // Success tone
     shieldStats.great++;
+    shieldStreak++;
+    bestStreak = Math.max(bestStreak, shieldStreak);
     
   } else if (flashPhase >= CFG.flash1 && flashPhase <= CFG.warnFrames) {
     // GOOD: From 1st flash to end (80-240) - forgiving for learning
@@ -1379,6 +1380,8 @@ const handleShieldProtection = (capturedFireflies, now) => {
     shieldSuccessFlash = 15; // Very brief flash
     playTone(500, 0.15, 0.1); // Softer tone
     shieldStats.good++;
+    shieldStreak++;
+    bestStreak = Math.max(bestStreak, shieldStreak);
     
   } else {
     protectionRate = 0.5; // Poor timing - only 50% protection
@@ -1386,6 +1389,7 @@ const handleShieldProtection = (capturedFireflies, now) => {
     // Missed timing feedback
     playTone(300, 0.3, 0.12); // Lower disappointed tone
     shieldStats.missed++;
+    shieldStreak = 0; // Break streak on missed shield
   }
   
   const firefliesLost = F(capturedFireflies.length * (1 - protectionRate));
@@ -1424,7 +1428,6 @@ const handleShieldProtection = (capturedFireflies, now) => {
   // Apply protection results
   if (firefliesLost > 0) {
     score -= firefliesLost;
-    deliveryStreak = 0; // Break streak when losing fireflies
     releaseCapturedFireflies(firefliesLost);
   }
   
@@ -1488,7 +1491,6 @@ const handleNoPenalty = (capturedFireflies) => {
   const firefliesSaved = capturedFireflies.length - firefliesLost;
   
   score -= firefliesLost;
-  deliveryStreak = 0; // Break streak when losing fireflies
   totalLost += firefliesLost;
   
   // Show what happened with single, clear message
@@ -1623,6 +1625,30 @@ const drawDeliveryZone = (now) => {
 
 // ===== LEADERBOARD SYSTEM =====
 
+// Format date as M/D/YY
+const formatDate = (date) => {
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const year = date.getFullYear().toString().slice(-2);
+  return `${month}/${day}/${year}`;
+};
+
+// Parse and format any date string to M/D/YY
+const parseAndFormatDate = (dateStr) => {
+  if (!dateStr) return "Today";
+  
+  try {
+    if (dateStr.includes('/') && dateStr.length <= 10) {
+      return dateStr; // Already in M/D/YY format
+    }
+    
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? "Today" : formatDate(date);
+  } catch {
+    return "Today";
+  }
+};
+
 // Get leaderboard (supports both localStorage and Firebase)
 const getLeaderboard = async () => {
   if (firebaseEnabled && window.db) {
@@ -1638,7 +1664,7 @@ const getLeaderboard = async () => {
         ...doc.data()
       }));
     } catch (e) {
-      console.warn('Firebase leaderboard failed, falling back to localStorage:', e);
+      // Firebase fallback handled below
     }
   }
   
@@ -1650,64 +1676,47 @@ const getLeaderboard = async () => {
   }
 };
 
-// Save leaderboard (supports both localStorage and Firebase)
+// Save leaderboard to localStorage (Firebase saves individual entries)
 const saveLeaderboard = async (leaderboard) => {
-  // Always save to localStorage as backup
   try {
     localStorage.setItem('firefly_leaderboard', JSON.stringify(leaderboard));
   } catch (e) {
-    console.warn('Could not save leaderboard to localStorage:', e);
+    // LocalStorage save failed
   }
-  
-  // Also save to Firebase if enabled (this happens in addScoreToLeaderboard)
-  // Note: Individual scores are saved to Firebase, not the entire leaderboard array
 };
 
-// Add score to leaderboard (only for completed 3-minute games)
 const addScoreToLeaderboard = async (finalScore, playerName) => {
-  const leaderboard = await getLeaderboard();
+  if (finalScore <= 0) return false;
   
-  // Format date as M/D/YY
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const day = now.getDate();
-  const year = now.getFullYear().toString().slice(-2);
-  const dateString = `${month}/${day}/${year}`;
+  const leaderboard = await getLeaderboard();
   
   const newEntry = {
     name: playerName || "Anonymous",
     score: finalScore,
-    delivered: totalCollected,
     streak: bestStreak,
     perfectShields: shieldStats.perfect,
-    date: dateString
+    date: formatDate(new Date())
   };
   
   leaderboard.push(newEntry);
-  leaderboard.sort((a, b) => b.score - a.score); // Sort by score descending
+  leaderboard.sort((a, b) => b.score - a.score);
   
-  // Keep only top 10 scores
   const topScores = leaderboard.slice(0, 10);
   await saveLeaderboard(topScores);
   
-  // Save the new entry to Firebase (if enabled)
+  // Save to Firebase if enabled
   if (firebaseEnabled && window.db) {
     try {
       await window.db.collection('leaderboard').add(newEntry);
-      console.log('Score saved to Firebase leaderboard');
     } catch (e) {
-      console.warn('Could not save score to Firebase:', e);
+      // Firebase save failed, localStorage already updated
     }
   }
   
-  // Check if this is a new high score (top 3)
-  const position = topScores.findIndex(entry => 
+  return topScores.findIndex(entry => 
     entry.score === finalScore && 
-    entry.name === newEntry.name && 
-    entry.delivered === totalCollected
-  );
-  
-  return position < 3; // Return true if top 3
+    entry.name === newEntry.name
+  ) < 3;
 };
 
 // ===== SCORE SYSTEM =====
@@ -2391,13 +2400,10 @@ const deliverFireflies = (capturedFireflies) => {
   // Track delivery time for curiosity system
   lastDeliveryTime = Date.now();
   
-  // Streak bonus system
-  deliveryStreak++;
-  bestStreak = Math.max(bestStreak, deliveryStreak);
-  
   // Enhanced scoring system with firefly tiers
   const basePoints = capturedFireflies.reduce((sum, firefly) => sum + (firefly.points || 1), 0);
-  const streakMultiplier = Math.min(3, 1 + (deliveryStreak - 1) * 0.5);
+  // Shield streak bonus (based on shield performance, not deliveries)
+  const streakMultiplier = Math.min(3, 1 + (shieldStreak - 1) * 0.5);
   const pointsAwarded = Math.floor(basePoints * streakMultiplier);
   
   score += pointsAwarded;
@@ -2444,9 +2450,9 @@ const deliverFireflies = (capturedFireflies) => {
   let feedbackColor = "#00ff00";
   
   // Color based on streak level
-  if (deliveryStreak >= 5) {
+  if (shieldStreak >= 5) {
     feedbackColor = "#ffaa00"; // Hot orange for big streaks
-  } else if (deliveryStreak >= 3) {
+  } else if (shieldStreak >= 3) {
     feedbackColor = "#88ff88"; // Bright green for good streaks
   }
   
@@ -3143,7 +3149,9 @@ const handleKeyDown = (e) => {
             isNewHighScore = result;
             leaderboardCacheTime = 0; // Refresh leaderboard cache
           })
-          .catch(e => console.warn('Failed to save score:', e));
+          .catch(e => {
+            // Score save failed, continue anyway
+          });
         
         showNameInput = false;
         pendingScore = null;
@@ -3242,8 +3250,10 @@ const handleKeyDown = (e) => {
       // Load data when opening leaderboard
       loadLeaderboardData().then(() => {
         showLeaderboard = true;
+        leaderboardOpenTime = Date.now(); // Track when leaderboard opened
       });
     } else {
+      totalLeaderboardPauseTime += Date.now() - leaderboardOpenTime; // Track pause time
       showLeaderboard = false;
     }
     return;
@@ -3255,6 +3265,7 @@ const handleKeyDown = (e) => {
     
     // Close leaderboard if it's open
     if (showLeaderboard) {
+      totalLeaderboardPauseTime += Date.now() - leaderboardOpenTime; // Track pause time
       showLeaderboard = false;
       return;
     }
@@ -3456,7 +3467,7 @@ const restartGame = () => {
   score = 0;
   totalCollected = 0;
   totalLost = 0;
-  deliveryStreak = 0;
+  shieldStreak = 0;
   bestStreak = 0;
   shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
   tierStats = { basic: 0, veteran: 0, elite: 0, legendary: 0, created: { veteran: 0, elite: 0, legendary: 0 }, lost: { veteran: 0, elite: 0, legendary: 0 } };
@@ -3508,6 +3519,8 @@ const restartGame = () => {
   lastDeliveryTime = Date.now(); // Reset delivery timer to prevent immediate game over
   totalHelpPauseTime = 0; // Reset help menu pause time
   helpOpenTime = 0;
+  totalLeaderboardPauseTime = 0; // Reset leaderboard pause time
+  leaderboardOpenTime = 0;
   lastSpawnTime = Date.now(); // Reset spawn timer
   
   // Spawn initial fireflies - generous starting counts for engaging gameplay
@@ -4166,12 +4179,9 @@ const drawGameOverScreen = () => {
     timeString = `${gameMinutes}:${gameSeconds.toString().padStart(2, '0')}`;
   }
   
-  // Simplified final score calculation
   const finalScore = gameWon ? score + 1000 + (bestStreak * 50) : score;
   
-  // Show name input for completed games (won or survived full 3 minutes)
-  if (gameOverTime && !isNewHighScore && gameWon && !infiniteMode && !showNameInput && !pendingScore) {
-    // Store the score for name input
+  if (gameOverTime && !isNewHighScore && gameWon && !infiniteMode && !showNameInput && !pendingScore && finalScore > 0) {
     pendingScore = {
       score: finalScore,
       gameWon: gameWon
@@ -4305,17 +4315,14 @@ const drawGameOverScreen = () => {
   x.restore();
 };
 
-// Draw leaderboard screen with consistent styling
-// Cache for leaderboard data to avoid excessive async calls
+// Leaderboard cache to avoid excessive async calls
 let leaderboardCache = [];
 let leaderboardCacheTime = 0;
-const CACHE_DURATION = 5000; // 5 seconds
+const CACHE_DURATION = 5000;
 
-// Load leaderboard data asynchronously
 const loadLeaderboardData = async () => {
   const now = Date.now();
   
-  // Use cached data if recent enough
   if (now - leaderboardCacheTime < CACHE_DURATION && leaderboardCache.length > 0) {
     return leaderboardCache;
   }
@@ -4325,7 +4332,6 @@ const loadLeaderboardData = async () => {
     leaderboardCacheTime = now;
     return leaderboardCache;
   } catch (e) {
-    console.warn('Failed to load leaderboard:', e);
     return [];
   }
 };
@@ -4333,125 +4339,125 @@ const loadLeaderboardData = async () => {
 const drawLeaderboard = () => {
   if (!showLeaderboard) return;
   
-  // Dark overlay
-  setFill(BLACK(0.9));
+  drawStars(Date.now());
+  
+  const gradient = x.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, "rgba(10, 10, 26, 0.75)");
+  gradient.addColorStop(1, "rgba(10, 10, 26, 0.85)");
+  setFill(gradient);
   x.fillRect(0, 0, w, h);
   
+  // Sparkly particle effects
+  const now = Date.now();
+  for (let i = 0; i < 15; i++) {
+    const sparkleX = (w * 0.1 + i * w * 0.05 + sin(now * 0.003 + i) * 20) % w;
+    const sparkleY = h * 0.3 + sin(now * 0.002 + i * 2) * h * 0.4;
+    const sparkleAlpha = (sin(now * 0.004 + i * 3) * 0.3 + 0.5) * 0.4;
+    
+    setFill(`rgba(136, 68, 255, ${sparkleAlpha})`);
+    x.beginPath();
+    x.arc(sparkleX, sparkleY, 1, 0, TAU);
+    x.fill();
+  }
+  
   x.save();
-  x.textAlign = "center";
-  
-  // Start position
-  let currentY = h * 0.1;
-  
-  // Use consistent styling from game over screen
-  const LINE_SPACING = 30;
-  const SECTION_SPACING = 40;
   
   // Title
-  setFill("#d4af37"); // Gold color like help menu title
-  x.font = `42px ${FONTS.title}`;
-  x.shadowColor = "#d4af37";
-  x.shadowBlur = 8;
-  x.fillText("Leaderboard", w / 2, currentY);
+  x.textAlign = "center";
+  setFill("#8844ff");
+  x.font = `48px ${FONTS.title}`;
+  x.shadowColor = "#8844ff";
+  x.shadowBlur = 20;
+  x.fillText("Hall of Perfection", w / 2, h * 0.12);
   x.shadowBlur = 0;
-  currentY += SECTION_SPACING + 10;
   
-  // Use cached leaderboard data (will be loaded async when leaderboard is first shown)
   const leaderboard = leaderboardCache;
   
   if (leaderboard.length === 0) {
-    setFill("#cccccc");
-    x.font = `20px ${FONTS.body}`;
-    x.fillText("No scores yet - be the first to complete 3 minutes!", w / 2, currentY + 50);
+    const emptyY = h * 0.5;
+    setFill("#666666");
+    x.font = `24px ${FONTS.body}`;
+    x.fillText("✨ No champions yet ✨", w / 2, emptyY);
+    x.font = `18px ${FONTS.body}`;
+    setFill("#888888");
+    x.fillText("Complete 3 minutes to join the elite", w / 2, emptyY + 35);
   } else {
-    // Column positions
-    const nameCol = w * 0.15;      // Name
-    const scoreCol = w * 0.35;     // Score  
-    const deliveredCol = w * 0.5;  // Delivered
-    const streakCol = w * 0.62;    // Streak
-    const shieldsCol = w * 0.74;   // Perfect shields
-    const dateCol = w * 0.86;      // Date
+    const startY = h * 0.18;
+    const cardHeight = 85;
+    const cardSpacing = 8;
+    const maxCards = Math.floor((h * 0.65) / (cardHeight + cardSpacing));
     
-    // Table headers with better spacing
-    setFill("#d4af37");
-    x.font = `bold 16px ${FONTS.body}`;
-    x.textAlign = "left";
-    
-    x.fillText("Player", nameCol, currentY);
-    x.fillText("Score", scoreCol, currentY);
-    x.fillText("Delivered", deliveredCol, currentY);
-    x.fillText("Streak", streakCol, currentY);
-    x.fillText("Shields", shieldsCol, currentY);
-    x.fillText("Date", dateCol, currentY);
-    currentY += LINE_SPACING;
-    
-    // Separator line
-    setStroke("#d4af37");
-    setLineWidth(2);
-    x.beginPath();
-    x.moveTo(nameCol, currentY);
-    x.lineTo(w * 0.92, currentY);
-    x.stroke();
-    currentY += LINE_SPACING;
-    
-    // Leaderboard entries with improved design
-    leaderboard.forEach((entry, index) => {
+    leaderboard.slice(0, maxCards).forEach((entry, index) => {
       const rank = index + 1;
+      const cardY = startY + index * (cardHeight + cardSpacing);
+      const cardX = w * 0.08;
+      const cardWidth = w * 0.84;
+      const centerY = cardY + cardHeight / 2 + 4;
       
-      // Row background for top 3
-      if (rank <= 3) {
-        const bgAlpha = rank === 1 ? 0.2 : rank === 2 ? 0.15 : 0.1;
-        const bgColor = rank === 1 ? "#ffd700" : rank === 2 ? "#c0c0c0" : "#cd7f32";
-        setFill(bgColor + Math.floor(bgAlpha * 255).toString(16).padStart(2, '0'));
-        x.fillRect(nameCol - 10, currentY - 18, w * 0.8, LINE_SPACING - 2);
-      }
+      const isHovered = mx >= cardX && mx <= cardX + cardWidth && 
+                       my >= cardY && my <= cardY + cardHeight;
       
-      // Rank medal/number
-      if (rank <= 3) {
-        const medals = ["🥇", "🥈", "🥉"];
-        setFill("#ffffff");
-        x.font = `18px ${FONTS.body}`;
-        x.fillText(medals[rank - 1], nameCol - 25, currentY);
+      // Card background with rank-based styling
+      if (rank === 1) {
+        x.shadowColor = "#8844ff";
+        x.shadowBlur = 15;
+        setFill(isHovered ? "rgba(25, 25, 50, 0.95)" : "rgba(20, 20, 45, 0.9)");
+        x.fillRect(cardX, cardY, cardWidth, cardHeight);
+        x.shadowBlur = 0;
       } else {
-        setFill("#888888");
-        x.font = `14px ${FONTS.body}`;
-        x.fillText(`${rank}`, nameCol - 20, currentY);
+        const bgAlpha = rank <= 3 ? "rgba(15, 15, 35, 0.8)" : "rgba(10, 10, 25, 0.85)";
+        const hoverAlpha = rank <= 3 ? "rgba(20, 20, 40, 0.85)" : "rgba(15, 15, 30, 0.9)";
+        setFill(isHovered ? hoverAlpha : bgAlpha);
+        x.fillRect(cardX, cardY, cardWidth, cardHeight);
       }
+      
+      // Rank indicator with letter spacing
+      const rankX = cardX + 25;
+      const spacing = rank <= 3 ? 6 : 8;
+      
+      x.textAlign = "center";
+      x.font = `bold 18px ${FONTS.body}`;
+      setFill(rank === 1 ? "#99ff99" : "#aaaaaa");
+      
+      x.fillText("#", rankX - spacing, centerY);
+      x.fillText(`${rank}`, rankX + spacing, centerY);
       
       // Player name
-      setFill(rank <= 3 ? "#ffffff" : "#cccccc");
-      x.font = `${rank <= 3 ? 'bold ' : ''}15px ${FONTS.body}`;
+      const nameX = cardX + 70;
+      setFill(rank === 1 ? "#99ff99" : (rank <= 3 ? "#ffffff" : "#dddddd"));
+      x.font = `bold 20px ${FONTS.body}`;
+      x.textAlign = "left";
+      
       const displayName = entry.name || "Anonymous";
-      const maxNameWidth = scoreCol - nameCol - 10;
-      const truncatedName = displayName.length > 12 ? displayName.substring(0, 12) + "..." : displayName;
-      x.fillText(truncatedName, nameCol, currentY);
+      const truncatedName = displayName.length > 22 ? displayName.substring(0, 22) + "..." : displayName;
+      x.fillText(truncatedName, nameX, centerY);
       
-      // Score with emphasis for top scores
-      setFill(rank <= 3 ? "#ffffff" : "#dddddd");
-      x.font = `${rank <= 3 ? 'bold ' : ''}15px ${FONTS.body}`;
-      x.fillText(entry.score, scoreCol, currentY);
+      // Draw stats with helper function
+      const statsStartX = nameX + 200;
+      const statsSpacing = (cardWidth - (statsStartX - cardX) - 80) / 3;
       
-      // Stats in consistent color
-      setFill(rank <= 3 ? "#e0e0e0" : "#aaaaaa");
-      x.font = `14px ${FONTS.body}`;
-      x.fillText(entry.delivered || 0, deliveredCol, currentY);
-      x.fillText(`${entry.streak || 0}x`, streakCol, currentY);
-      x.fillText(entry.perfectShields || 0, shieldsCol, currentY);
-      x.fillText(entry.date || "Today", dateCol, currentY);
+      const drawStat = (value, label, color, xPos, fontSize = 14) => {
+        x.textAlign = "center";
+        setFill(color);
+        x.font = `bold ${fontSize}px ${FONTS.body}`;
+        x.fillText(value, xPos, centerY - 8);
+        setFill("#aaaaaa");
+        x.font = `10px ${FONTS.body}`;
+        x.fillText(label, xPos, centerY + 8);
+      };
       
-      currentY += LINE_SPACING;
-      
-      // Stop at reasonable screen height
-      if (currentY > h * 0.82) return;
+      drawStat(`${entry.score}`, "SCORE", "#ffdd00", statsStartX, 16);
+      drawStat(`${entry.perfectShields || 0}`, "PERFECT SHIELDS", "#99ff99", statsStartX + statsSpacing);
+      drawStat(`${entry.streak || 0}x`, "SHIELD STREAKS", "#66ccff", statsStartX + statsSpacing * 2);
+      drawStat(parseAndFormatDate(entry.date), "DATE", "#cccccc", statsStartX + statsSpacing * 3, 12);
     });
   }
   
   // Instructions
-  currentY = Math.max(currentY + SECTION_SPACING, h * 0.85);
-  setFill("#888888");
-  x.font = `16px ${FONTS.body}`;
+  setFill("#666666");
+  x.font = `18px ${FONTS.body}`;
   x.textAlign = "center";
-  x.fillText("Press 'L' or ESC to close", w / 2, currentY);
+  x.fillText("Press 'L' or ESC to close", w / 2, h * 0.92);
   
   x.restore();
 };
@@ -4554,10 +4560,13 @@ const drawMainUI = () => {
   if (startTime && !gameOver && !gameWon) {
     x.textAlign = "right";
     
-    // Calculate elapsed time, excluding time spent in help menu
-    let elapsed = Date.now() - startTime - totalHelpPauseTime;
+    // Calculate elapsed time, excluding time spent in help menu and leaderboard
+    let elapsed = Date.now() - startTime - totalHelpPauseTime - totalLeaderboardPauseTime;
     if (showHelp) {
       elapsed -= (Date.now() - helpOpenTime);
+    }
+    if (showLeaderboard) {
+      elapsed -= (Date.now() - leaderboardOpenTime);
     }
     
     // Ensure elapsed is never negative (safety check)
@@ -4649,11 +4658,11 @@ const drawMainUI = () => {
   }
   
   // Streak display (when active) - now below shield
-  if (deliveryStreak >= 2) {
-    const streakColor = deliveryStreak >= 5 ? "#ffcc99" : "#99ff99";
+  if (shieldStreak >= 2) {
+    const streakColor = shieldStreak >= 5 ? "#ffcc99" : "#99ff99";
     setFill(streakColor);
     x.font = `16px ${FONTS.body}`;
-    x.fillText(`${deliveryStreak}x streak (+${Math.floor((Math.min(3, 1 + (deliveryStreak - 1) * 0.5) - 1) * 100)}% bonus)`, 20, leftY);
+    x.fillText(`${shieldStreak}x streak (+${Math.floor((Math.min(3, 1 + (shieldStreak - 1) * 0.5) - 1) * 100)}% bonus)`, 20, leftY);
     leftY += 25;
   }
   
@@ -4885,8 +4894,8 @@ function gameLoop() {
   
   // Game loop runs at 60fps but only updates game logic when active
   
-  // Only update game systems when game is active (not over or won) AND screen is adequate AND help menu is closed AND tab is visible
-  if (!gameOver && !gameWon && !isScreenTooSmall && !showHelp && !autoPaused) {
+  // Only update game systems when game is active (not over or won) AND screen is adequate AND help menu is closed AND leaderboard is closed AND tab is visible
+  if (!gameOver && !gameWon && !isScreenTooSmall && !showHelp && !showLeaderboard && !autoPaused) {
     // Update all game systems
     updateCatEyes(now);
     updatePlayer(now);
@@ -4920,7 +4929,7 @@ function gameLoop() {
         addScoreText('Nyx lost interest - delivery too late!', w / 2, h / 2, '#ff4444', 300);
         playGameOverMelody();
         fadeBgMusic(0.03, 3);
-        deliveryStreak = 0; // Break streak on game over
+        shieldStreak = 0; // Break streak on game over
       }
       
       // Game over when Nyx loses all interest (score <= -50)
@@ -4940,7 +4949,7 @@ function gameLoop() {
       
       // Base spawn rate: much faster - every 3-4 seconds, down to 1.5 seconds
       const baseSpawnInterval = Math.max(1500, 4000 - (minutesPlayed * 500));
-      const spawnInterval = baseSpawnInterval / (1 + deliveryStreak * 0.1); // Streaks make it harder
+      const spawnInterval = baseSpawnInterval / (1 + shieldStreak * 0.1); // Streaks make it harder
       
       // Set firefly cap based on mode
       const maxFireflies = infiniteMode ? 18 : CFG.maxFireflies; // Cap at 18 for infinite mode
@@ -5044,7 +5053,7 @@ function gameLoop() {
   drawNameInput();
   
   // Draw cursor firefly on top of overlays when they're active
-  const overlaysActive = showHelp || gameOver || gameWon;
+  const overlaysActive = showHelp || gameOver || gameWon || showLeaderboard || showNameInput;
   if (overlaysActive && mouseInBounds) {
     drawPlayerFirefly(mx, my, now);
   }
