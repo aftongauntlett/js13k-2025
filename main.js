@@ -594,6 +594,88 @@ let isNewHighScore = false;
 let showNameInput = false;
 let playerName = "";
 let pendingScore = null;
+let nameWarning = "";
+let duplicateCheckTimeout = null; // Debounce duplicate checking
+let scoreAlreadySubmitted = false; // Track if score has been submitted for this game
+let recentPlayerName = null; // Track the most recently submitted player name
+let playerHighlightAnimation = null; // Track animation state for recent player highlight
+
+// Simple debug logging system (set to false for production)
+const DEBUG_LEADERBOARD = false;
+const debugLog = (message, ...args) => {
+  if (DEBUG_LEADERBOARD) {
+    console.log(message, ...args);
+  }
+};
+
+// Start player highlight animation if there's a recent player
+const startPlayerHighlightAnimation = () => {
+  if (recentPlayerName) {
+    playerHighlightAnimation = {
+      startTime: Date.now(),
+      duration: 4500, // 4.5 seconds for 2 slow breaths
+      flashes: 2
+    };
+  }
+};
+
+// Helper function to track name input state changes
+const setNameInputState = (value, reason) => {
+  showNameInput = value;
+};
+
+// Consolidated victory handler to avoid duplicate logic
+const handleVictory = (reason = "victory") => {
+  if (gameWon || gameOver) return; // Prevent multiple triggers
+  
+  gameWon = true;
+  gameOverTime = Date.now();
+  
+  // Calculate final score
+  const finalScore = score + 1000 + (bestStreak * 50);
+  
+  // Check leaderboard qualification and set up name input immediately
+  scoreQualifiesForLeaderboard(finalScore).then(qualifies => {
+    // Immediately set up name input if qualified (and not in infinite mode)
+    if (qualifies && !infiniteMode && !scoreAlreadySubmitted && finalScore > 0) {
+      pendingScore = {
+        score: finalScore,
+        gameWon: true
+      };
+      setNameInputState(true, `${reason} score qualifies for leaderboard`);
+      playerName = "";
+      nameWarning = "";
+    }
+  }).catch(error => {
+    console.error("Error checking leaderboard qualification:", error);
+  });
+};
+
+// Consolidated score submission handler to reduce duplication
+const submitScore = (submittedName, reason) => {
+  if (!pendingScore || scoreAlreadySubmitted) {
+    return;
+  }
+  
+  addScoreToLeaderboard(pendingScore.score, submittedName)
+    .then(result => {
+      isNewHighScore = result;
+      leaderboardCacheTime = 0; // Refresh leaderboard cache
+    })
+    .catch(e => {
+      console.error("Score save failed:", e);
+    });
+  
+  // Track the submitted player name for highlighting
+  recentPlayerName = submittedName;
+  
+  // Reset state
+  setNameInputState(false, reason);
+  pendingScore = null;
+  playerName = ""; // Reset the global playerName variable
+  nameWarning = "";
+  scoreAlreadySubmitted = true;
+};
 
 // Firebase config - loaded from Vercel environment variables
 const FIREBASE_CONFIG = typeof process !== 'undefined' && process.env ? {
@@ -1649,6 +1731,27 @@ const parseAndFormatDate = (dateStr) => {
   }
 };
 
+// Check if a score qualifies for the leaderboard
+const scoreQualifiesForLeaderboard = async (score) => {
+  if (score <= 0) return false;
+  
+  try {
+    const leaderboard = await getLeaderboard();
+    
+    // If we have fewer than 5 entries, any positive score qualifies
+    if (leaderboard.length < 5) {
+      return true;
+    }
+    
+    // Check if score beats the 5th place (lowest qualifying score)
+    const lowestQualifyingScore = leaderboard[4].score;
+    return score > lowestQualifyingScore;
+  } catch (error) {
+    // If we can't check leaderboard, allow the entry
+    return true;
+  }
+};
+
 // Get leaderboard (supports both localStorage and Firebase)
 const getLeaderboard = async () => {
   if (firebaseEnabled && window.db) {
@@ -1686,7 +1789,9 @@ const saveLeaderboard = async (leaderboard) => {
 };
 
 const addScoreToLeaderboard = async (finalScore, playerName) => {
-  if (finalScore <= 0) return false;
+  if (finalScore <= 0) {
+    return false;
+  }
   
   const leaderboard = await getLeaderboard();
   
@@ -1701,7 +1806,7 @@ const addScoreToLeaderboard = async (finalScore, playerName) => {
   leaderboard.push(newEntry);
   leaderboard.sort((a, b) => b.score - a.score);
   
-  const topScores = leaderboard.slice(0, 10);
+  const topScores = leaderboard.slice(0, 5);
   await saveLeaderboard(topScores);
   
   // Save to Firebase if enabled
@@ -1713,11 +1818,44 @@ const addScoreToLeaderboard = async (finalScore, playerName) => {
     }
   }
   
-  return topScores.findIndex(entry => 
+  const isTop3 = topScores.findIndex(entry => 
     entry.score === finalScore && 
     entry.name === newEntry.name
   ) < 3;
+  
+  return isTop3;
 };
+
+// Debounced duplicate checker to avoid race conditions
+const debouncedCheckNameDuplicates = () => {
+  if (duplicateCheckTimeout) {
+    clearTimeout(duplicateCheckTimeout);
+  }
+  
+  duplicateCheckTimeout = setTimeout(async () => {
+    if (!playerName.trim()) {
+      nameWarning = "";
+      return;
+    }
+    
+    try {
+      const leaderboard = await getLeaderboard();
+      const trimmedName = playerName.trim().toLowerCase();
+      const isDuplicate = leaderboard.some(entry => 
+        entry.name.toLowerCase() === trimmedName
+      );
+      
+      nameWarning = isDuplicate ? "This name is already taken - try something else!" : "";
+    } catch (e) {
+      console.error("Error checking duplicates:", e);
+      // If we can't check, don't show warning
+      nameWarning = "";
+    }
+  }, 300); // 300ms debounce
+};
+
+// Legacy function for compatibility
+const checkNameDuplicates = debouncedCheckNameDuplicates;
 
 // ===== SCORE SYSTEM =====
 
@@ -3067,9 +3205,106 @@ const handleMouseDown = (e) => {
     return;
   }
   
-  if (gameOver || gameWon) {
+  // Handle name input button clicks
+  if (showNameInput && window.nameInputButtons) {
+    const buttons = window.nameInputButtons;
+    
+    // Submit button
+    if (mx >= buttons.submit.x - buttons.submit.width/2 && 
+        mx <= buttons.submit.x + buttons.submit.width/2 &&
+        my >= buttons.submit.y - buttons.submit.height/2 && 
+        my <= buttons.submit.y + buttons.submit.height/2) {
+      
+      // Submit score with name (but check for duplicates first)
+      if (pendingScore && !nameWarning) {
+        submitScore(playerName || "Anonymous", "Submit button clicked");
+      }
+      return;
+    }
+    
+    // Skip button  
+    if (mx >= buttons.skip.x - buttons.skip.width/2 && 
+        mx <= buttons.skip.x + buttons.skip.width/2 &&
+        my >= buttons.skip.y - buttons.skip.height/2 && 
+        my <= buttons.skip.y + buttons.skip.height/2) {
+      
+      // Submit as Anonymous
+      if (pendingScore) {
+        submitScore("Anonymous", "Skip button clicked");
+      }
+      return;
+    }
+    
+    // Don't process other clicks when showing name input
+    return;
+  }
+  
+  // Handle game over button clicks (but not when leaderboard is open)
+  if ((gameOver || gameWon) && !showLeaderboard && window.gameOverButtons) {
+    const buttons = window.gameOverButtons;
+    
+    // Leaderboard button
+    if (mx >= buttons.leaderboard.x - buttons.leaderboard.width/2 && 
+        mx <= buttons.leaderboard.x + buttons.leaderboard.width/2 &&
+        my >= buttons.leaderboard.y - buttons.leaderboard.height/2 && 
+        my <= buttons.leaderboard.y + buttons.leaderboard.height/2) {
+      
+      if (!showLeaderboard) {
+        // Load data when opening leaderboard (same as 'L' key)
+        loadLeaderboardData().then(() => {
+          showLeaderboard = true;
+          leaderboardOpenTime = Date.now();
+          startPlayerHighlightAnimation();
+        });
+      } else {
+        totalLeaderboardPauseTime += Date.now() - leaderboardOpenTime;
+        showLeaderboard = false;
+        leaderboardOpenTime = 0;
+      }
+      return;
+    }
+    
+    // Play Again button
+    if (mx >= buttons.playAgain.x - buttons.playAgain.width/2 && 
+        mx <= buttons.playAgain.x + buttons.playAgain.width/2 &&
+        my >= buttons.playAgain.y - buttons.playAgain.height/2 && 
+        my <= buttons.playAgain.y + buttons.playAgain.height/2) {
+      
+      restartGame();
+      return;
+    }
+    
+    // Handle accordion toggle
+    if (window.gameOverAccordion) {
+      const accordion = window.gameOverAccordion;
+      if (mx >= accordion.x - accordion.width/2 && 
+          mx <= accordion.x + accordion.width/2 &&
+          my >= accordion.y - accordion.height/2 && 
+          my <= accordion.y + accordion.height/2) {
+        
+        showDetailedStats = !showDetailedStats;
+        return;
+      }
+    }
+    
+    // Don't restart game if clicking in game over screen area
+    return;
+  }
+  
+  if ((gameOver || gameWon) && !showNameInput) {
     restartGame();
     // Don't return - let the click continue to be processed for the new game
+  }
+  
+  // Don't process clicks when showing name input
+  if (showNameInput) return;
+  
+  // Handle leaderboard closure - clicking anywhere closes it (easy to reopen with L)
+  if (showLeaderboard) {
+    totalLeaderboardPauseTime += Date.now() - leaderboardOpenTime;
+    showLeaderboard = false;
+    leaderboardOpenTime = 0;
+    return;
   }
   
   mousePressed = true;
@@ -3142,34 +3377,26 @@ const handleKeyDown = (e) => {
     e.preventDefault();
     
     if (e.code === "Enter") {
-      // Submit score with name
-      if (pendingScore) {
-        addScoreToLeaderboard(pendingScore.score, playerName || "Anonymous")
-          .then(result => {
-            isNewHighScore = result;
-            leaderboardCacheTime = 0; // Refresh leaderboard cache
-          })
-          .catch(e => {
-            // Score save failed, continue anyway
-          });
-        
-        showNameInput = false;
-        pendingScore = null;
-        playerName = "";
+      // Submit score with name (but check for duplicates first)
+      if (pendingScore && !nameWarning) {
+        submitScore(playerName || "Anonymous", "Enter key pressed");
       }
       return;
     }
     
     if (e.code === "Escape") {
-      // Skip name entry
-      showNameInput = false;
-      pendingScore = null;
-      playerName = "";
+      // Submit as Anonymous (same as Skip button)
+      if (pendingScore) {
+        submitScore("Anonymous", "Escape key pressed");
+      }
       return;
     }
     
     if (e.code === "Backspace") {
+      console.log("⌫ Backspace - before:", playerName);
       playerName = playerName.slice(0, -1);
+      console.log("⌫ Backspace - after:", playerName);
+      checkNameDuplicates();
       return;
     }
     
@@ -3179,6 +3406,7 @@ const handleKeyDown = (e) => {
       // Allow letters, numbers, spaces, and basic punctuation
       if (/^[a-zA-Z0-9 \-_!.]$/.test(char)) {
         playerName += char;
+        checkNameDuplicates();
       }
     }
     return;
@@ -3251,6 +3479,7 @@ const handleKeyDown = (e) => {
       loadLeaderboardData().then(() => {
         showLeaderboard = true;
         leaderboardOpenTime = Date.now(); // Track when leaderboard opened
+        startPlayerHighlightAnimation();
       });
     } else {
       totalLeaderboardPauseTime += Date.now() - leaderboardOpenTime; // Track pause time
@@ -3278,6 +3507,39 @@ const handleKeyDown = (e) => {
       helpOpenTime = Date.now();
     }
     showHelp = !showHelp;
+    return;
+  }
+  
+  // TEMPORARY: Testing shortcut - W key to end game with random score
+  if (e.code === "KeyW" && gameStarted && !gameOver && !gameWon) {
+    // Set random score for leaderboard variety
+    score = Math.floor(Math.random() * 2000) + 100; // 100-2100 points
+    shieldStreak = Math.floor(Math.random() * 15) + 1; // 1-15 streak
+    bestStreak = Math.max(shieldStreak, Math.floor(Math.random() * 20) + 1); // Best is at least current
+    
+    // Add some random stats for variety
+    totalCollected = Math.floor(Math.random() * 50) + 10;
+    totalLost = Math.floor(Math.random() * 10);
+    
+    // Add realistic shield stats (was missing - causing 0s)
+    shieldStats.perfect = Math.floor(Math.random() * 8) + 2; // 2-9 perfect shields
+    shieldStats.great = Math.floor(Math.random() * 5) + 1; // 1-5 great shields
+    shieldStats.good = Math.floor(Math.random() * 3); // 0-2 good shields
+    shieldStats.missed = Math.floor(Math.random() * 2); // 0-1 missed shields
+    
+    // Add realistic evolution stats
+    tierStats.created.veteran = Math.floor(Math.random() * 10) + 2; // 2-11 veteran
+    tierStats.created.elite = Math.floor(Math.random() * 6) + 1; // 1-6 elite
+    tierStats.created.legendary = Math.floor(Math.random() * 3); // 0-2 legendary
+    
+    // Trigger victory condition
+    handleVictory("test mode");
+    
+    // Play victory effects
+    addScoreText('TEST VICTORY!', w / 2, h / 2, '#ffdd00', 600);
+    playDawnBreaksVictory();
+    fadeBgMusic(0.25, 2);
+    
     return;
   }
 
@@ -3461,9 +3723,18 @@ const restartGame = () => {
   gameOverTime = null; // Reset game over time
   gameStarted = true; // Ensure game is marked as started
   isNewHighScore = false; // Reset high score flag
-  showNameInput = false; // Reset name input state
+  setNameInputState(false, "Game restart");
   playerName = ""; // Reset player name
   pendingScore = null; // Reset pending score
+  nameWarning = ""; // Reset name warning
+  scoreAlreadySubmitted = false; // Reset score submission flag
+  
+  // Clear any pending timeouts to prevent memory leaks
+  if (duplicateCheckTimeout) {
+    clearTimeout(duplicateCheckTimeout);
+    duplicateCheckTimeout = null;
+  }
+  showDetailedStats = false; // Reset accordion state
   score = 0;
   totalCollected = 0;
   totalLost = 0;
@@ -4161,9 +4432,14 @@ const drawHelp = () => {
   x.restore();
 };
 
+// Accordion state for detailed stats
+let showDetailedStats = false;
+
 // Draw unified game over/victory screen with consistent styling
 const drawGameOverScreen = () => {
   if (!gameOver && !gameWon) return;
+  if (showNameInput) return; // Don't show game over screen if name input is active
+  if (showLeaderboard) return; // Don't show game over screen if leaderboard is active
   
   // Calculate survival time
   let gameTime, gameMinutes, gameSeconds, timeString;
@@ -4181,14 +4457,7 @@ const drawGameOverScreen = () => {
   
   const finalScore = gameWon ? score + 1000 + (bestStreak * 50) : score;
   
-  if (gameOverTime && !isNewHighScore && gameWon && !infiniteMode && !showNameInput && !pendingScore && finalScore > 0) {
-    pendingScore = {
-      score: finalScore,
-      gameWon: gameWon
-    };
-    showNameInput = true;
-    playerName = "";
-  }
+  // Note: Name input logic now handled immediately when game ends, not during render
   
   // Dark overlay
   setFill(BLACK(0.9));
@@ -4197,120 +4466,183 @@ const drawGameOverScreen = () => {
   x.save();
   x.textAlign = "center";
   
-  // Start higher up for better laptop compatibility
-  let currentY = h * 0.15;
-  
-  // Define consistent styling
   const isWin = gameWon;
-  const titleColor = isWin ? "#22aa22" : "#aa2222";
-  const accentColor = isWin ? "#44dd44" : "#dd4444";
   
-  // Consistent line spacing
-  const LINE_SPACING = 35;
-  const SECTION_SPACING = 50;
+  // Define screen configuration map
+  const config = isWin ? {
+    title: "DAWN BREAKS",
+    titleColor: "#22aa22",
+    subtitle: "Nyx remains fascinated by your light!",
+    subtitleColor: "#88dd88"
+  } : {
+    title: "THE LIGHT FADES", 
+    titleColor: "#aa2222",
+    subtitle: "Nyx has grown bored with your glow.",
+    subtitleColor: "#dd8888"
+  };
+  
+  let currentY = h * 0.12;
   
   // Title
-  setFill(titleColor);
+  setFill(config.titleColor);
   x.font = `48px ${FONTS.title}`;
-  x.shadowColor = titleColor;
+  x.shadowColor = config.titleColor;
   x.shadowBlur = 12;
-  x.fillText(isWin ? "DAWN BREAKS!" : "THE LIGHT FADES", w / 2, currentY);
+  x.fillText(config.title, w / 2, currentY);
   x.shadowBlur = 0;
-  currentY += SECTION_SPACING;
+  currentY += 50;
   
-  // Subtitle
-  setFill("#bbbbbb");
+  // Subtitle (moved under title)
+  setFill(config.subtitleColor);
   x.font = `18px ${FONTS.body}`;
-  x.fillText(isWin ? "You guided fireflies through the eternal night" : "The darkness has claimed the light", w / 2, currentY);
-  currentY += SECTION_SPACING;
+  x.fillText(config.subtitle, w / 2, currentY);
+  currentY += 60;
   
-  // Core stats with consistent styling map
-  const stats = [
+  // Core stats
+  const coreStats = [
     { label: "Fireflies Delivered", value: totalCollected, color: "#ffffff" },
-    { label: "Fireflies Lost", value: totalLost, color: "#ffaa66", show: totalLost > 0 },
-    { label: "Time Survived", value: timeString, color: "#66aaff" },
-    { label: "Best Streak", value: bestStreak, color: "#99ff99", show: bestStreak > 1 }
+    { label: "Fireflies Lost", value: totalLost, color: "#ffaa66" },
+    { label: "Time Survived", value: timeString, color: "#66aaff" }
   ];
   
   x.font = `22px ${FONTS.body}`;
-  stats.forEach(stat => {
-    if (stat.show === false) return;
+  coreStats.forEach(stat => {
     setFill(stat.color);
     x.fillText(`${stat.label}: ${stat.value}`, w / 2, currentY);
-    currentY += LINE_SPACING;
+    currentY += 35;
   });
   
-  currentY += 10;
+  currentY += 20;
   
-  // Shield performance summary (simplified)
-  const totalShields = shieldStats.perfect + shieldStats.great + shieldStats.good + shieldStats.missed;
-  if (totalShields > 3) {
-    const accurateShields = shieldStats.perfect + shieldStats.great + shieldStats.good;
-    const accuracy = Math.round((accurateShields / totalShields) * 100);
-    
-    setFill("#cccccc");
-    x.font = `18px ${FONTS.body}`;
-    x.fillText(`Shield Accuracy: ${accuracy}% (${accurateShields}/${totalShields})`, w / 2, currentY);
-    currentY += LINE_SPACING;
-  }
-  
-  // High-tier fireflies summary (only if noteworthy)
-  const totalHighTier = tierStats.veteran + tierStats.elite + tierStats.legendary;
-  if (totalHighTier > 0) {
-    const highTierText = [];
-    if (tierStats.legendary > 0) highTierText.push(`${tierStats.legendary} Legendary`);
-    if (tierStats.elite > 0) highTierText.push(`${tierStats.elite} Elite`);
-    if (tierStats.veteran > 0) highTierText.push(`${tierStats.veteran} Veteran`);
-    
-    setFill("#ffcc00");
-    x.font = `18px ${FONTS.body}`;
-    x.fillText(`Evolved Fireflies: ${highTierText.join(", ")}`, w / 2, currentY);
-    currentY += LINE_SPACING;
-  }
-  
-  currentY += SECTION_SPACING;
-  
-  // Final score with consistent styling
-  setFill(accentColor);
+  // Final score
+  setFill(config.titleColor);
   x.font = `28px ${FONTS.title}`;
-  x.shadowColor = accentColor;
+  x.shadowColor = config.titleColor;
   x.shadowBlur = 8;
   x.fillText(`Final Score: ${isWin ? finalScore : score}`, w / 2, currentY);
   x.shadowBlur = 0;
-  currentY += 30;
+  currentY += 40;
   
-  // Score explanation
-  setFill("#cccccc");
-  x.font = `14px ${FONTS.body}`;
-  x.fillText("Points earned from delivering fireflies (Basic: 1pt, Veteran: 3pts, Elite: 8pts, Legendary: 20pts)", w / 2, currentY);
+  // Note: Leaderboard qualification now handled immediately when game ends
+  
   currentY += 25;
   
-  // New high score notification
-  if (isNewHighScore) {
-    setFill("#ffd700");
-    x.font = `bold 18px ${FONTS.body}`;
-    x.shadowColor = "#ffd700";
-    x.shadowBlur = 6;
-    x.fillText("🏆 NEW HIGH SCORE! 🏆", w / 2, currentY);
-    x.shadowBlur = 0;
-    currentY += 30;
+  // Accordion toggle for detailed stats
+  const accordionY = currentY;
+  const accordionText = showDetailedStats ? "▼ Hide Detailed Stats" : "▶ Show Detailed Stats";
+  setFill("#aaaaaa");
+  x.font = `16px ${FONTS.body}`;
+  x.fillText(accordionText, w / 2, currentY);
+  
+  // Store accordion click area
+  window.gameOverAccordion = {
+    x: w / 2,
+    y: accordionY,
+    width: 200,
+    height: 20
+  };
+  
+  currentY += 35;
+  
+  // Show detailed stats if accordion is open
+  if (showDetailedStats) {
+    // Shield stats
+    setFill("#cccccc");
+    x.font = `18px ${FONTS.body}`;
+    x.fillText("Successful Shields:", w / 2, currentY);
+    currentY += 25;
+    
+    const shieldStats_display = [
+      { label: "Perfect", value: shieldStats.perfect, color: "#00ff00" },
+      { label: "Great", value: shieldStats.great, color: "#ffff00" },
+      { label: "Good", value: shieldStats.good, color: "#ff8800" },
+      { label: "Missed", value: shieldStats.missed, color: "#ff4444" }
+    ];
+    
+    x.font = `16px ${FONTS.body}`;
+    shieldStats_display.forEach(shield => {
+      setFill(shield.color);
+      x.fillText(`${shield.label}: ${shield.value}`, w / 2, currentY);
+      currentY += 22;
+    });
+    
+    currentY += 15;
+    
+    // Evolution stats
+    setFill("#cccccc");
+    x.font = `18px ${FONTS.body}`;
+    x.fillText("Fireflies Evolved:", w / 2, currentY);
+    currentY += 25;
+    
+    const evolutionStats = [
+      { label: "Veteran", value: tierStats.created.veteran, color: "#9966ff" },
+      { label: "Elite", value: tierStats.created.elite, color: "#ffaa00" },
+      { label: "Legendary", value: tierStats.created.legendary, color: "#ff0080" }
+    ];
+    
+    x.font = `16px ${FONTS.body}`;
+    evolutionStats.forEach(tier => {
+      setFill(tier.color);
+      x.fillText(`${tier.label}: ${tier.value}`, w / 2, currentY);
+      currentY += 22;
+    });
+    
+    currentY += 20;
   }
   
-  // Flavor text
-  setFill(isWin ? "#88dd88" : "#dd8888");
-  x.font = `16px ${FONTS.body}`;
-  x.fillText(isWin ? "Nyx remains fascinated by your light!" : "Nyx has grown bored with the darkness", w / 2, currentY);
-  currentY += SECTION_SPACING;
+  // Add extra spacing above buttons
+  currentY += 30;
   
-  // Buttons
-  setFill("#888888");
-  x.font = `16px ${FONTS.body}`;
-  x.fillText("Click to play again", w / 2, currentY);
-  currentY += 25;
+  // Action buttons
+  const buttonWidth = 150;
+  const buttonHeight = 40;
+  const buttonSpacing = 180;
+  const button1X = w / 2 - buttonSpacing / 2;
+  const button2X = w / 2 + buttonSpacing / 2;
+  const buttonY = currentY;
   
-  setFill("#aaaaaa");
-  x.font = `14px ${FONTS.body}`;
-  x.fillText("Press 'L' to view leaderboard", w / 2, currentY);
+  // Check hover states
+  const isLeaderboardHovered = mx >= button1X - buttonWidth/2 && mx <= button1X + buttonWidth/2 &&
+                               my >= buttonY - buttonHeight/2 && my <= buttonY + buttonHeight/2;
+  const isPlayAgainHovered = mx >= button2X - buttonWidth/2 && mx <= button2X + buttonWidth/2 &&
+                             my >= buttonY - buttonHeight/2 && my <= buttonY + buttonHeight/2;
+  
+  // View Leaderboard button
+  setFill(isLeaderboardHovered ? "#444444" : "#333333");
+  setStroke(isLeaderboardHovered ? "#888888" : "#666666");
+  setLineWidth(2);
+  x.fillRect(button1X - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  x.strokeRect(button1X - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  
+  setFill(isLeaderboardHovered ? "#dddddd" : "#ffffff");
+  x.font = `16px ${FONTS.body}`;
+  x.fillText("View Leaderboard", button1X, buttonY + 5);
+  
+  // Play Again button
+  setFill(isPlayAgainHovered ? "#444444" : "#333333");
+  setStroke(isPlayAgainHovered ? "#888888" : "#666666");
+  setLineWidth(2);
+  x.fillRect(button2X - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  x.strokeRect(button2X - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  
+  setFill(isPlayAgainHovered ? "#dddddd" : "#ffffff");
+  x.fillText("Play Again", button2X, buttonY + 5);
+  
+  // Store button click areas
+  window.gameOverButtons = {
+    leaderboard: {
+      x: button1X,
+      y: buttonY,
+      width: buttonWidth,
+      height: buttonHeight
+    },
+    playAgain: {
+      x: button2X,
+      y: buttonY,
+      width: buttonWidth,
+      height: buttonHeight
+    }
+  };
   
   x.restore();
 };
@@ -4411,6 +4743,65 @@ const drawLeaderboard = () => {
         x.fillRect(cardX, cardY, cardWidth, cardHeight);
       }
       
+      // Glowing aura animation for recent player
+      const shouldAnimate = recentPlayerName && (entry.name === recentPlayerName || (entry.name === "Anonymous" && recentPlayerName === "Anonymous"));
+      if (shouldAnimate && playerHighlightAnimation) {
+        const elapsed = Date.now() - playerHighlightAnimation.startTime;
+        const progress = Math.min(elapsed / playerHighlightAnimation.duration, 1);
+        
+        if (progress < 1) {
+          // Organic breathing pattern with 2 varied breaths
+          const timeInSeconds = elapsed / 1000;
+          let breathIntensity = 0;
+          
+          // Define organic breath timing (inhale fast, exhale slow, pause)
+          if (timeInSeconds < 0.9) {
+            // First breath: inhale
+            breathIntensity = Math.sin((timeInSeconds / 0.9) * Math.PI / 2);
+          } else if (timeInSeconds < 2.5) {
+            // First breath: slow exhale + pause
+            const exhaleProgress = (timeInSeconds - 0.9) / 1.6;
+            breathIntensity = Math.cos(exhaleProgress * Math.PI / 2);
+          } else if (timeInSeconds < 3.3) {
+            // Second breath: inhale
+            const inhaleProgress = (timeInSeconds - 2.5) / 0.8;
+            breathIntensity = Math.sin(inhaleProgress * Math.PI / 2);
+          } else {
+            // Second breath: final exhale
+            const exhaleProgress = (timeInSeconds - 3.3) / 1.2;
+            breathIntensity = Math.cos(exhaleProgress * Math.PI / 2);
+          }
+          
+          const fadeOut = 1 - (progress * 0.3); // Gentle fade over time
+          const baseGlow = 0.08; // Always present subtle glow
+          const breathGlow = breathIntensity * 0.12; // Additional breathing intensity
+          const glowAlpha = (baseGlow + breathGlow) * fadeOut;
+          
+          if (glowAlpha > 0.02) {
+            // Create misty aura effect with multiple layers
+            const baseAuraSize = 8; // Minimum aura size
+            const breathAuraSize = breathIntensity * 12; // Variable breathing size
+            const auraSize = baseAuraSize + breathAuraSize;
+            
+            // Outer glow layer - always subtle base
+            x.shadowColor = "#4da6ff";
+            x.shadowBlur = auraSize;
+            x.fillStyle = `rgba(77, 166, 255, ${glowAlpha * 0.3})`;
+            x.fillRect(cardX - 3, cardY - 3, cardWidth + 6, cardHeight + 6);
+            
+            // Inner glow layer - breathing intensity
+            x.shadowBlur = auraSize * 0.5;
+            x.fillStyle = `rgba(135, 206, 255, ${glowAlpha * 0.5})`;
+            x.fillRect(cardX - 1, cardY - 1, cardWidth + 2, cardHeight + 2);
+            
+            x.shadowBlur = 0;
+          }
+        } else {
+          // Animation finished, clear it
+          playerHighlightAnimation = null;
+        }
+      }
+      
       // Rank indicator with letter spacing
       const rankX = cardX + 25;
       const spacing = rank <= 3 ? 6 : 8;
@@ -4422,9 +4813,16 @@ const drawLeaderboard = () => {
       x.fillText("#", rankX - spacing, centerY);
       x.fillText(`${rank}`, rankX + spacing, centerY);
       
-      // Player name
+      // Player name with recent player highlighting
       const nameX = cardX + 70;
-      setFill(rank === 1 ? "#99ff99" : (rank <= 3 ? "#ffffff" : "#dddddd"));
+      const isRecentPlayer = recentPlayerName && (entry.name === recentPlayerName || (entry.name === "Anonymous" && recentPlayerName === "Anonymous"));
+      
+      if (isRecentPlayer) {
+        setFill("#4da6ff"); // Blue color for recent player
+      } else {
+        setFill(rank === 1 ? "#99ff99" : (rank <= 3 ? "#ffffff" : "#dddddd"));
+      }
+      
       x.font = `bold 20px ${FONTS.body}`;
       x.textAlign = "left";
       
@@ -4457,7 +4855,7 @@ const drawLeaderboard = () => {
   setFill("#666666");
   x.font = `18px ${FONTS.body}`;
   x.textAlign = "center";
-  x.fillText("Press 'L' or ESC to close", w / 2, h * 0.92);
+  x.fillText("Click anywhere, 'L', or ESC to close", w / 2, h * 0.92);
   
   x.restore();
 };
@@ -4473,7 +4871,16 @@ const drawNameInput = () => {
   x.save();
   x.textAlign = "center";
   
-  let currentY = h * 0.35;
+  let currentY = h * 0.25;
+  
+  // NEW HIGH SCORE announcement
+  setFill("#ffd700");
+  x.font = `24px ${FONTS.title}`;
+  x.shadowColor = "#ffd700";
+  x.shadowBlur = 8;
+  x.fillText("🏆 NEW HIGH SCORE! 🏆", w / 2, currentY);
+  x.shadowBlur = 0;
+  currentY += 50;
   
   // Title
   setFill("#d4af37");
@@ -4522,15 +4929,78 @@ const drawNameInput = () => {
     x.stroke();
   }
   
-  currentY += 80;
+  currentY += 100; // Increased spacing above buttons
+  
+  // Action buttons
+  const buttonWidth = 120;
+  const buttonHeight = 35;
+  const buttonSpacing = 160;
+  const skipX = w / 2 - buttonSpacing / 2; // Skip button on left
+  const submitX = w / 2 + buttonSpacing / 2; // Submit button on right
+  const buttonY = currentY;
+  
+  x.textAlign = "center";
+  
+  // Check hover states
+  const isSkipHovered = mx >= skipX - buttonWidth/2 && mx <= skipX + buttonWidth/2 &&
+                        my >= buttonY - buttonHeight/2 && my <= buttonY + buttonHeight/2;
+  const isSubmitHovered = mx >= submitX - buttonWidth/2 && mx <= submitX + buttonWidth/2 &&
+                          my >= buttonY - buttonHeight/2 && my <= buttonY + buttonHeight/2;
+  
+  // Skip button (left side)
+  setFill(isSkipHovered ? "#777777" : "#666666");
+  setStroke(isSkipHovered ? "#aaaaaa" : "#888888");
+  setLineWidth(2);
+  x.fillRect(skipX - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  x.strokeRect(skipX - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  
+  setFill(isSkipHovered ? "#dddddd" : "#ffffff");
+  x.font = `16px ${FONTS.body}`;
+  x.fillText("Skip", skipX, buttonY + 5);
+  
+  // Submit button (right side) - sage green
+  setFill(isSubmitHovered ? "#7ba05b" : "#6b8e4e");
+  setStroke(isSubmitHovered ? "#9bc275" : "#8faf72");
+  setLineWidth(2);
+  x.fillRect(submitX - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  x.strokeRect(submitX - buttonWidth/2, buttonY - buttonHeight/2, buttonWidth, buttonHeight);
+  
+  setFill(isSubmitHovered ? "#f0f0f0" : "#ffffff");
+  x.font = `16px ${FONTS.body}`;
+  x.fillText("Submit", submitX, buttonY + 5);
+  
+  // Store button click areas
+  window.nameInputButtons = {
+    submit: {
+      x: submitX,
+      y: buttonY,
+      width: buttonWidth,
+      height: buttonHeight
+    },
+    skip: {
+      x: skipX,
+      y: buttonY,
+      width: buttonWidth,
+      height: buttonHeight
+    }
+  };
+  
+  currentY += 60;
+  
+  // Warning for duplicate names
+  if (nameWarning) {
+    setFill("#ff6666");
+    x.font = `15px ${FONTS.body}`;
+    x.fillText(nameWarning, w / 2, currentY);
+    currentY += 25;
+  }
   
   // Instructions
-  x.textAlign = "center";
   setFill("#aaaaaa");
-  x.font = `16px ${FONTS.body}`;
-  x.fillText("Type your name and press ENTER", w / 2, currentY);
-  currentY += 25;
-  x.fillText("or press ESCAPE to skip", w / 2, currentY);
+  x.font = `14px ${FONTS.body}`;
+  x.fillText("Type your name and click Submit, or press ENTER", w / 2, currentY);
+  currentY += 20;
+  x.fillText("Click Skip to submit as 'Anonymous'", w / 2, currentY);
   
   x.restore();
 };
@@ -4912,7 +5382,8 @@ function gameLoop() {
     
     // Check for victory: surviving the night
     if (!gameWon && !gameOver && startTime && (Date.now() - startTime >= NIGHT_DURATION)) {
-      gameWon = true;
+      handleVictory("survived the night");
+      
       addScoreText('YOU SURVIVED THE NIGHT!', w / 2, h / 2, '#ffdd00', 600);
       playDawnBreaksVictory(); // Dawn breaking victory melody
       fadeBgMusic(0.25, 2); // Boost music volume for celebration
