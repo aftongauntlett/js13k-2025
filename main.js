@@ -581,6 +581,7 @@ const isMobileDevice = () => {
 // Mouse state
 let mx = 0, my = 0, lastMx = 0, lastMy = 0;
 let mousePressed = false, mouseDownTime = 0;
+// Right-click drop functionality - no state tracking needed
 let mouseMoving = false, lastMovementTime = 0;
 let mouseInBounds = true;
 
@@ -598,6 +599,9 @@ let lastOverheatAttempt = 0; // Track when player tried to use abilities while o
 let shieldActive = false, shieldCooldown = 0, lastShieldTime = 0;
 let shieldCharging = false; // Track when shield is charging up
 let shieldSuccessFlash = 0, shieldPerfectFlash = 0; // Success feedback timers
+
+// Repel system (right-click/X key)
+let xPressed = false; // Track X key state to prevent double-drops
 
 // Input state tracking
 let spacePressed = false;
@@ -1969,8 +1973,26 @@ const FIREFLY_TIERS = {
   legendary: { name: 'Legendary', color: 'rainbow', points: 20, speed: 2.0 } // Rainbow - survived 3+ protections
 };
 
+// Helper function to convert firefly colors to valid particle colors
+const getParticleColor = (firefly, fallbackColor = "#ffdd99") => {
+  if (!firefly.color) return fallbackColor;
+  
+  if (firefly.color === 'rainbow') {
+    // Generate a random rainbow color for particles
+    const hue = Math.random() * 360;
+    return `hsl(${hue}, 80%, 60%)`;
+  }
+  
+  return firefly.color;
+};
+
 // Upgrade a firefly to the next tier after successful shield protection
 const upgradeFirefly = (firefly) => {
+  // Prevent evolution beyond legendary tier
+  if (firefly.tier === 'legendary') {
+    return { upgraded: false, alreadyMaxTier: true };
+  }
+  
   firefly.protectionCount++;
   
   // Determine new tier based on protection count
@@ -1983,6 +2005,12 @@ const upgradeFirefly = (firefly) => {
     newTier = 'veteran';
   } else {
     newTier = 'basic'; // Should not happen, but fallback
+  }
+  
+  // Ensure we have a valid tier
+  if (!FIREFLY_TIERS[newTier]) {
+    console.warn(`Invalid tier: ${newTier}, falling back to legendary`);
+    newTier = 'legendary';
   }
   
   // Only upgrade if we're moving to a higher tier
@@ -2161,7 +2189,7 @@ const updateFireflies = (playerX, playerY) => {
             size: 0.2 + r() * 0.4, // Small dust-like particles
             life: 0,
             maxLife: 30 + r() * 20, // Medium duration
-            color: firefly.color || "#ffdd99", // Soft warm color
+            color: getParticleColor(firefly, "#ffdd99"), // Soft warm color
             glow: true,
             twinkle: r() * TAU,
           });
@@ -2215,7 +2243,7 @@ const updateFireflies = (playerX, playerY) => {
             size: 0.4 + r() * 0.8, // Larger particles for more visibility
             life: 0,
             maxLife: 40 + r() * 30, // Longer duration
-            color: firefly.color || "#88ffaa", // Bright arrival color
+            color: getParticleColor(firefly, "#88ffaa"), // Bright arrival color
             glow: true,
             twinkle: r() * TAU,
           });
@@ -2241,7 +2269,7 @@ const updateFireflies = (playerX, playerY) => {
             size: 0.5 + r() * 0.5,
             life: 0,
             maxLife: 20 + r() * 15,
-            color: firefly.color || "#88ffaa",
+            color: getParticleColor(firefly, "#88ffaa"),
             glow: true,
             twinkle: r() * TAU,
           });
@@ -2269,6 +2297,11 @@ const updateFireflies = (playerX, playerY) => {
     if (firefly.newlySpawned > 0) {
       firefly.newlySpawned--;
     }
+    
+    // Handle immunity countdown
+    if (firefly.immunity > 0) {
+      firefly.immunity--;
+    }
   });
   
   // Remove fireflies that have completed death animation
@@ -2277,6 +2310,15 @@ const updateFireflies = (playerX, playerY) => {
 
 // Update behavior for captured fireflies
 const updateCapturedFirefly = (firefly, playerX, playerY) => {
+  // Safety check: Ensure firefly has a valid tier
+  if (!firefly.tier || !FIREFLY_TIERS[firefly.tier]) {
+    console.warn(`Captured firefly has invalid tier: ${firefly.tier}, resetting to basic`);
+    firefly.tier = 'basic';
+    firefly.color = '#88ff88';
+    firefly.points = 1;
+    firefly.protectionCount = Math.min(firefly.protectionCount || 0, 0);
+  }
+  
   // Ensure captureOffset exists (fix for null reference crash)
   if (!firefly.captureOffset) {
     firefly.captureOffset = { x: 0, y: 0 };
@@ -2297,6 +2339,15 @@ const updateCapturedFirefly = (firefly, playerX, playerY) => {
 
 // Update behavior for free fireflies
 const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
+  // Safety check: Ensure firefly has a valid tier
+  if (!firefly.tier || !FIREFLY_TIERS[firefly.tier]) {
+    console.warn(`Firefly has invalid tier: ${firefly.tier}, resetting to basic`);
+    firefly.tier = 'basic';
+    firefly.color = '#88ff88';
+    firefly.points = 1;
+    firefly.protectionCount = Math.min(firefly.protectionCount || 0, 0);
+  }
+  
   // Handle fade-in for newly spawned fireflies
   if (firefly.fadeIn < 1) {
     firefly.fadeIn += 0.03;
@@ -2322,8 +2373,8 @@ const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
     if (firefly.vx !== undefined) return;
   }
   
-  // Check for player capture when charging - but not when overheated
-  if (charging && !summonOverheated) {
+  // Check for player capture when charging - but not when overheated or immune
+  if (charging && !summonOverheated && !firefly.immunity) {
     const distSq = d2(firefly.x, firefly.y, playerX, playerY);
     if (distSq < 25 * 25) { // 25 pixel capture radius
       captureFirefly(firefly, playerX, playerY);
@@ -2341,6 +2392,8 @@ const updateFreeFirefly = (firefly, playerX, playerY, speedMultiplier) => {
       firefly.y += Math.sin(repelAngle) * repelForce;
     }
   }
+
+
   
   // Natural roaming behavior
   if (!firefly.roamTarget || 
@@ -2963,6 +3016,8 @@ const drawPlayerCharacter = (playerX, playerY, now) => {
     x.arc(playerX, playerY, shieldRadius, 0, TAU);
     x.fill();
   }
+
+
   
   x.restore();
 };
@@ -3026,9 +3081,26 @@ const drawParticles = () => {
         particle.x, particle.y, 0,
         particle.x, particle.y, glowSize
       );
-      gradient.addColorStop(0, particle.color + Math.floor(alpha * 220).toString(16).padStart(2, '0')); // Brighter glow
-      gradient.addColorStop(0.5, particle.color + Math.floor(alpha * 120).toString(16).padStart(2, '0'));
-      gradient.addColorStop(0.8, particle.color + Math.floor(alpha * 40).toString(16).padStart(2, '0'));
+      // Handle rainbow and hex colors properly
+      let baseColor = particle.color;
+      if (baseColor === 'rainbow') {
+        // Use a dynamic color for rainbow particles
+        const hue = (particle.life * 5) % 360; // Cycle through hues
+        baseColor = `hsl(${hue}, 80%, 60%)`;
+      }
+      
+      // Create gradient with proper color handling
+      if (baseColor.startsWith('#')) {
+        // Hex color - append alpha
+        gradient.addColorStop(0, baseColor + Math.floor(alpha * 220).toString(16).padStart(2, '0')); 
+        gradient.addColorStop(0.5, baseColor + Math.floor(alpha * 120).toString(16).padStart(2, '0'));
+        gradient.addColorStop(0.8, baseColor + Math.floor(alpha * 40).toString(16).padStart(2, '0'));
+      } else {
+        // Non-hex color (hsl, rgb, etc.) - use rgba
+        gradient.addColorStop(0, baseColor.replace(')', `, ${alpha * 0.86})`).replace('hsl', 'hsla'));
+        gradient.addColorStop(0.5, baseColor.replace(')', `, ${alpha * 0.47})`).replace('hsl', 'hsla'));
+        gradient.addColorStop(0.8, baseColor.replace(')', `, ${alpha * 0.16})`).replace('hsl', 'hsla'));
+      }
       gradient.addColorStop(1, "transparent");
       
       setFill(gradient);
@@ -3094,7 +3166,7 @@ const createDeathEffect = (firefly) => {
       size: 0.3 + r() * 0.4, // Small dust particles
       life: 0,
       maxLife: 35 + r() * 25, // Moderate duration
-      color: firefly.color || "#ffdd99", // Soft warm dust color
+      color: getParticleColor(firefly, "#ffdd99"), // Soft warm dust color
       glow: true,
       twinkle: r() * TAU,
     });
@@ -3137,6 +3209,49 @@ const createFailedSummonEffect = (x, y) => {
       maxLife: 40 + r() * 20,
       color: "#556677", // Dim blue-gray (exhausted energy)
       glow: false,
+      twinkle: r() * TAU,
+    });
+  }
+};
+
+// Firefly drop effect (orange/pink/white burst)
+const createDropEffect = (x, y) => {
+  // Get player position for magical burst effect
+  const { x: playerX, y: playerY } = getPlayerPosition();
+  
+  // Main burst of orange sparkles around the player
+  for (let i = 0; i < 20; i++) {
+    const angle = r() * TAU;
+    const distance = 8 + r() * 25; // Moderate spread
+    const speed = 0.6 + r() * 1.8; // Good visibility
+    particles.push({
+      x: playerX + cos(angle) * (3 + r() * 12), 
+      y: playerY + sin(angle) * (3 + r() * 12),
+      vx: cos(angle) * speed,
+      vy: sin(angle) * speed - 0.2, // Slight upward drift
+      size: 0.5 + r() * 0.8, 
+      life: 0,
+      maxLife: 50 + r() * 30, 
+      color: i < 6 ? "#ff6b35" : (i < 12 ? "#ff8c42" : "#ffab76"), // Orange gradient
+      glow: true,
+      twinkle: r() * TAU,
+    });
+  }
+  
+  // Pink/white accent sparkles
+  for (let i = 0; i < 8; i++) {
+    const angle = r() * TAU;
+    const speed = 0.4 + r() * 1.0;
+    particles.push({
+      x: playerX + (r() - 0.5) * 10,
+      y: playerY + (r() - 0.5) * 10,
+      vx: cos(angle) * speed,
+      vy: sin(angle) * speed - 0.1,
+      size: 0.3 + r() * 0.5,
+      life: 0,
+      maxLife: 60 + r() * 20,
+      color: i < 4 ? "#ffccaa" : "#ffffff", // Pink-white accents
+      glow: true,
       twinkle: r() * TAU,
     });
   }
@@ -3219,6 +3334,12 @@ const handleMouseDown = (e) => {
   // Reset idle timer on any interaction
   lastPlayerMoveTime = Date.now();
   playerIsIdle = false;
+  
+  // Handle right-click for firefly drop/repel
+  if (e.button === 2) {
+    handleRightMouseDown(e);
+    return;
+  }
   
   if (showHelp) {
     // Check if clicking on mode toggle button in help menu
@@ -3383,6 +3504,11 @@ const handleMouseUp = (e) => {
   
   if (!gameStarted || gameOver) return;
   
+  // Right-click doesn't need mouse up handling (drop happens on mouse down)
+  if (e.button === 2) {
+    return;
+  }
+  
   const holdDuration = Date.now() - mouseDownTime;
   mousePressed = false;
   shieldCharging = false; // Always stop charging on mouse up
@@ -3411,6 +3537,16 @@ const handleMouseUp = (e) => {
   }
   
   hasPlayedChime = false; // Reset for next activation
+};
+
+// Right-click mouse down handler
+const handleRightMouseDown = (e) => {
+  e.preventDefault(); // Prevent context menu
+  
+  if (!gameStarted || gameOver) return;
+  
+  // Simple tap - drop fireflies immediately
+  dropFireflies();
 };
 
 // Keyboard handler
@@ -3616,6 +3752,18 @@ const handleKeyDown = (e) => {
     spacePressed = true;
   }
 
+  // X key for firefly drop
+  if (e.code === "KeyX") {
+    e.preventDefault();
+    if (!gameStarted) return;
+    
+    // Only drop once when X is first pressed
+    if (!xPressed) {
+      dropFireflies();
+    }
+    xPressed = true;
+  }
+
 };
 
 // Handle key releases
@@ -3648,6 +3796,10 @@ const handleKeyUp = (e) => {
     
     spacePressed = false;
     hasPlayedChime = false; // Reset for next activation
+  }
+
+  if (e.code === "KeyX") {
+    xPressed = false;
   }
 };
 
@@ -3732,6 +3884,40 @@ const summonFirefly = () => {
   playTone(400, 0.15, 0.06); // Back to original tone
   quickFlashPower = 40; // Gentle flash
   screenShake = Math.min(screenShake + 1, 3); // Very subtle shake
+};
+
+const dropFireflies = () => {
+  // Find all captured fireflies and scatter them with immunity
+  let droppedCount = 0;
+  
+  otherFireflies.forEach(firefly => {
+    if (firefly.captured) {
+      firefly.captured = false;
+      droppedCount++;
+      
+      // Grant temporary immunity to prevent immediate recapture
+      firefly.immunity = 120; // 2 seconds at 60fps
+      
+      // Scatter outward from player position
+      const angle = r() * Math.PI * 2; // Random direction
+      const force = 3 + r() * 4; // Gentle to moderate force
+      firefly.vx = Math.cos(angle) * force;
+      firefly.vy = Math.sin(angle) * force;
+      
+      // Slight upward bias to feel more natural
+      firefly.vy -= 1;
+    }
+  });
+  
+  if (droppedCount > 0) {
+    playTone(300, 0.12, 0.05); // Gentle drop sound
+    
+    // Create orange burst effect
+    createDropEffect(w / 2, h / 2);
+    
+    // Small screen shake for feedback
+    screenShake = Math.min(screenShake + 2, 5);
+  }
 };
 
 const activateShield = (isHoldAction = false) => {
@@ -5672,6 +5858,7 @@ const initGame = () => {
   c.addEventListener('mouseup', handleMouseUp);
   c.addEventListener('mouseleave', () => { mouseInBounds = false; });
   c.addEventListener('mouseenter', () => { mouseInBounds = true; });
+  c.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent right-click context menu
   
   document.addEventListener('keydown', handleKeyDown);
   document.addEventListener('keyup', handleKeyUp);
