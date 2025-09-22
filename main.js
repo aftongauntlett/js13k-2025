@@ -28,8 +28,11 @@ const FONTS = {
 };
 
 // Font helper functions
-const setFont = (size, type = 'body') => x.font = `${size}px ${FONTS[type]}`;
-const setTitleFont = (size) => setFont(size, 'title');
+const setFontBySize = (size, type = 'body') => {
+  const font = `${size}px ${FONTS[type]}`;
+  setFont(font);
+};
+const setTitleFont = (size) => setFontBySize(size, 'title');
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -38,10 +41,43 @@ const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 const hyp = (dx, dy) => Math.hypot(dx, dy);
 const d2 = (ax, ay, bx, by) => { ax -= bx; ay -= by; return ax * ax + ay * ay; };
 
-// Canvas shortcuts
-const setFill = (color) => x.fillStyle = color;
-const setStroke = (color) => x.strokeStyle = color;
-const setLineWidth = (width) => x.lineWidth = width;
+// Canvas shortcuts with caching for performance
+let currentFillStyle = '';
+let currentStrokeStyle = '';
+let currentLineWidth = 0;
+let currentFont = '';
+
+const setFill = (color) => {
+  if (color !== currentFillStyle) {
+    x.fillStyle = color;
+    currentFillStyle = color;
+  }
+};
+const setStroke = (color) => {
+  if (color !== currentStrokeStyle) {
+    x.strokeStyle = color;
+    currentStrokeStyle = color;
+  }
+};
+const setLineWidth = (width) => {
+  if (width !== currentLineWidth) {
+    x.lineWidth = width;
+    currentLineWidth = width;
+  }
+};
+const setFont = (font) => {
+  if (font !== currentFont) {
+    x.font = font;
+    currentFont = font;
+  }
+};
+let currentShadowBlur = 0;
+const setShadowBlur = (blur) => {
+  if (blur !== currentShadowBlur) {
+    x.shadowBlur = blur;
+    currentShadowBlur = blur;
+  }
+};
 const BLACK = (alpha = 1) => `rgba(0,0,0,${alpha})`;
 
 // Game state helpers
@@ -576,6 +612,11 @@ let gameOverTime = null; // Stores the time when game ended for frozen display
 let totalCollected = 0, totalLost = 0;
 let shieldStreak = 0, bestStreak = 0; // Shield-based streak tracking
 let startTime = null;
+
+// Frame rate limiting (60 FPS cap)
+const TARGET_FPS = 60;
+const FRAME_TIME = 1000 / TARGET_FPS; // 16.67ms per frame
+let lastFrameTime = 0;
 let shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
 let tierStats = { basic: 0, veteran: 0, elite: 0, legendary: 0, created: { veteran: 0, elite: 0, legendary: 0 }, lost: { veteran: 0, elite: 0, legendary: 0 } };
 let audioEnabled = true, pageVisible = true;
@@ -599,6 +640,8 @@ let duplicateCheckTimeout = null; // Debounce duplicate checking
 let scoreAlreadySubmitted = false; // Track if score has been submitted for this game
 let recentPlayerName = null; // Track the most recently submitted player name
 let playerHighlightAnimation = null; // Track animation state for recent player highlight
+
+
 
 // Simple debug logging system (set to false for production)
 const DEBUG_LEADERBOARD = false;
@@ -867,7 +910,7 @@ const drawForest = () => {
   x.save();
   const catColors = getCatEyeColors();
   x.shadowColor = catColors.rgba(0.3); // More subtle cat eye color glow
-  x.shadowBlur = 40; // Larger, softer glow
+  setShadowBlur(40); // Larger, softer glow
   setFill("#0f0f0f");
   x.beginPath();
   x.moveTo(0, h * 0.6);
@@ -3393,9 +3436,7 @@ const handleKeyDown = (e) => {
     }
     
     if (e.code === "Backspace") {
-      console.log("⌫ Backspace - before:", playerName);
       playerName = playerName.slice(0, -1);
-      console.log("⌫ Backspace - after:", playerName);
       checkNameDuplicates();
       return;
     }
@@ -4778,23 +4819,22 @@ const drawLeaderboard = () => {
           const glowAlpha = (baseGlow + breathGlow) * fadeOut;
           
           if (glowAlpha > 0.02) {
-            // Create misty aura effect with multiple layers
-            const baseAuraSize = 8; // Minimum aura size
-            const breathAuraSize = breathIntensity * 12; // Variable breathing size
+            // Create misty aura effect with optimized rendering
+            const baseAuraSize = 8;
+            const breathAuraSize = breathIntensity * 12;
             const auraSize = baseAuraSize + breathAuraSize;
             
-            // Outer glow layer - always subtle base
+            // Use single glow layer to reduce shadow blur calls by 66%
             x.shadowColor = "#4da6ff";
-            x.shadowBlur = auraSize;
-            x.fillStyle = `rgba(77, 166, 255, ${glowAlpha * 0.3})`;
-            x.fillRect(cardX - 3, cardY - 3, cardWidth + 6, cardHeight + 6);
+            setShadowBlur(auraSize);
+            x.fillStyle = `rgba(77, 166, 255, ${glowAlpha * 0.4})`;
+            x.fillRect(cardX - 2, cardY - 2, cardWidth + 4, cardHeight + 4);
             
-            // Inner glow layer - breathing intensity
-            x.shadowBlur = auraSize * 0.5;
-            x.fillStyle = `rgba(135, 206, 255, ${glowAlpha * 0.5})`;
-            x.fillRect(cardX - 1, cardY - 1, cardWidth + 2, cardHeight + 2);
+            // Add subtle inner highlight without shadow blur for performance  
+            x.fillStyle = `rgba(135, 206, 255, ${glowAlpha * 0.2})`;
+            x.fillRect(cardX, cardY, cardWidth, cardHeight);
             
-            x.shadowBlur = 0;
+            setShadowBlur(0);
           }
         } else {
           // Animation finished, clear it
@@ -5005,6 +5045,9 @@ const drawNameInput = () => {
   x.restore();
 };
 
+// Draw performance monitoring overlay
+
+
 // Draw main UI elements with improved layout
 const drawMainUI = () => {
   x.save();
@@ -5050,7 +5093,7 @@ const drawMainUI = () => {
       const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
       
       setFill("#88ddff");
-      x.font = `20px ${FONTS.body}`;
+      setFontBySize(20, 'body');
       x.fillText(timeText, w - 20, 30);
     } else {
       // Normal mode: Count down from 3:00
@@ -5062,7 +5105,7 @@ const drawMainUI = () => {
       // Color based on time remaining
       const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
       setFill(timeColor);
-      x.font = `20px ${FONTS.body}`;
+      setFontBySize(20, 'body');
       x.fillText(timeText, w - 20, 30);
     }
   }
@@ -5074,7 +5117,7 @@ const drawMainUI = () => {
   if (infiniteMode) {
     // Infinite mode display
     setFill("#00dddd");
-    x.font = `18px ${FONTS.body}`;
+    setFontBySize(18, 'body');
     x.fillText("Mana: ∞", 20, leftY);
     leftY += 25;
     
@@ -5085,28 +5128,24 @@ const drawMainUI = () => {
     // Normal mode display
     // Mana display (always show) - use fixed cyan for readability
     setFill("#00dddd"); // Cyan color for good contrast against dark sky
-    x.font = `18px ${FONTS.body}`;
+    setFontBySize(18, 'body');
     x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, leftY);
     leftY += 25; // Tighter spacing
     
-    // Shield status
+    // Shield status - cache font since all use same size
     if (shieldActive) {
       setFill("#99ccff");
-      x.font = `18px ${FONTS.body}`;
       x.fillText("SHIELD ACTIVE", 20, leftY);
     } else if (shieldCharging) {
       // Pulsing yellow to show charging state
       const chargePulse = sin(Date.now() * 0.01) * 0.3 + 0.7;
       setFill(`rgba(255, 255, 0, ${chargePulse})`);
-      x.font = `18px ${FONTS.body}`;
       x.fillText("SHIELD CHARGING...", 20, leftY);
     } else if (shieldCooldown > 0) {
       setFill("#cccccc");
-      x.font = `18px ${FONTS.body}`;
       x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
     } else if (summonOverheated || manaEnergy < 5) {
       setFill("#ff6666");
-      x.font = `18px ${FONTS.body}`;
       x.fillText(manaEnergy <= 0 ? "OUT OF MANA" : "LOW MANA", 20, leftY);
     } else {
       let shieldColor = "#99ff99";
@@ -5121,7 +5160,6 @@ const drawMainUI = () => {
       }
       
       setFill(shieldColor);
-      x.font = `18px ${FONTS.body}`;
       x.fillText(shieldText, 20, leftY);
     }
     leftY += 25; // Tighter spacing
@@ -5131,7 +5169,7 @@ const drawMainUI = () => {
   if (shieldStreak >= 2) {
     const streakColor = shieldStreak >= 5 ? "#ffcc99" : "#99ff99";
     setFill(streakColor);
-    x.font = `16px ${FONTS.body}`;
+    setFontBySize(16, 'body');
     x.fillText(`${shieldStreak}x streak (+${Math.floor((Math.min(3, 1 + (shieldStreak - 1) * 0.5) - 1) * 100)}% bonus)`, 20, leftY);
     leftY += 25;
   }
@@ -5143,7 +5181,7 @@ const drawMainUI = () => {
     const alpha = 1 - (summonFeedback.life / summonFeedback.maxLife);
     setFill(`rgba(255, 255, 255, ${alpha})`);
     x.textAlign = "center";
-    x.font = `20px ${FONTS.body}`;
+    setFontBySize(20, 'body');
     x.fillText(summonFeedback.text, w / 2, h / 2 - 150);
   }
   
@@ -5153,7 +5191,7 @@ const drawMainUI = () => {
   
   if (summonOverheated || recentAttempt) {
     setFill("#ff9999");
-    x.font = `18px ${FONTS.body}`;
+    setFontBySize(18, 'body');
     // Position under player cursor for better visibility
     x.fillText("OVERHEATED", mx, my + 30);
   }
@@ -5357,12 +5395,26 @@ const drawMainUI = () => {
 
 // Draw victory screen when player survives the night
 // Main game loop - orchestrates all systems
-function gameLoop() {
+function gameLoop(currentTime) {
+  // Get current time if not provided by requestAnimationFrame
+  if (currentTime === undefined) {
+    currentTime = performance.now();
+  }
+  
+  // Limit to 60 FPS using setTimeout for precise timing
+  const deltaTime = currentTime - lastFrameTime;
+  
+  if (deltaTime < FRAME_TIME) {
+    const remainingTime = FRAME_TIME - deltaTime;
+    setTimeout(() => requestAnimationFrame(gameLoop), remainingTime);
+    return;
+  }
+  
+  const frameStartTime = currentTime;
   const now = Date.now();
+  lastFrameTime = currentTime;
   
   const { x: playerX, y: playerY } = getPlayerPosition();
-  
-  // Game loop runs at 60fps but only updates game logic when active
   
   // Only update game systems when game is active (not over or won) AND screen is adequate AND help menu is closed AND leaderboard is closed AND tab is visible
   if (!gameOver && !gameWon && !isScreenTooSmall && !showHelp && !showLeaderboard && !autoPaused) {
@@ -5470,17 +5522,24 @@ function gameLoop() {
     shakeApplied = true;
   }
 
-  // Render everything in proper order
-  drawStars(now);
-  drawForest();
+  // Render with optimizations - skip background when overlays are active
+  const renderOptimized = showHelp || gameOver || gameWon || showLeaderboard || showNameInput;
+  
+  if (!renderOptimized) {
+    drawStars(now);
+    drawForest();
+  }
+  
   drawCatEyes(now);
   drawDeliveryZone(now);
   drawFireflies(now);
-  drawPlayerFirefly(playerX, playerY, now);
-  drawPlayerCharacter(playerX, playerY, now);
   
-  drawParticles();
-  drawScoreTexts();
+  if (!renderOptimized) {
+    drawPlayerFirefly(playerX, playerY, now);
+    drawPlayerCharacter(playerX, playerY, now);
+    drawParticles();
+    drawScoreTexts();
+  }
   
   // Screen flash effect during cat eye warnings
   if (gameStarted && !gameOver && colorChangesEnabled) {
@@ -5557,6 +5616,7 @@ function gameLoop() {
     x.restore();
   }
   
+  // Performance monitoring overlay
   // Periodic cleanup to prevent memory leaks
   if (now % 5000 < 50) {
     if (particles.length > 100) particles = particles.slice(-50);
