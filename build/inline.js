@@ -12,13 +12,7 @@ const inlinedHtml = htmlContent.replace(
   /<script src=?["\']?main\.js["\']?><\/script>/,
   `<script>${jsContent}</script>`
 );
-
-// Remove any CSS file references and inline the CSS
-const cssContent = fs.readFileSync('style.css', 'utf8');
-const finalHtml = inlinedHtml.replace(
-  /<link rel="stylesheet" href="style\.css">/,
-  `<style>${cssContent}</style>`
-);
+const finalHtml = inlinedHtml;
 
 // Write the final HTML
 fs.writeFileSync('dist/index.html', finalHtml);

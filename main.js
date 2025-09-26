@@ -83,7 +83,7 @@ const BLACK = (alpha = 1) => `rgba(0,0,0,${alpha})`;
 // Game state helpers
 const getDifficulty = () => F(score / 50);
 const getSpeedMult = () => 1 + (score / 200);
-const getReqFireflies = () => Math.max(1, F(score / 100) + 1);
+
 
 // ===== AUDIO SYSTEM =====
 let a; // AudioContext
@@ -804,6 +804,7 @@ let catEyeColor = "gold", catEyeChangeTimer = 0, nextColorChangeTime = 600;
 let lastWarningState = false, colorChangesEnabled = true;
 let mouseNearCat = false, catProximity = 0;
 
+
 // Tutorial system
 let tutorialComplete = localStorage.getItem('tutorialComplete') === 'true';
 let tutorialStep = 0, firstDeliveryMade = false, tutorialTimer = 0;
@@ -1474,7 +1475,7 @@ const updateCatEyes = (now) => {
 const handleColorChange = (now) => {
   const capturedFireflies = otherFireflies.filter(f => f.captured);
   
-  // DEBUG: Track color change details
+
 
   
   // NEW: Check all evolved fireflies for shield protection and revert unprotected ones
@@ -1605,7 +1606,7 @@ const handleShieldProtection = (capturedFireflies, now) => {
   
   let timingQuality;
   
-  // DEBUG: Log shield timing details
+
 
   
   // Get player position and shield radius
@@ -1801,7 +1802,7 @@ const handleShieldProtection = (capturedFireflies, now) => {
 
 // No shield protection - simplified penalty system
 const handleNoPenalty = (capturedFireflies) => {
-  // DEBUG: Track no shield penalty
+
 
   
   // Tutorial protection: Don't lose evolved fireflies during steps 3-4
@@ -1966,21 +1967,7 @@ const getTimingColor = (quality) => {
 
 // Draw the delivery zone near Nyx Felis
 const drawDeliveryZone = (now) => {
-  const centerX = w / 2;
-  const centerY = h * 0.2; // Match Nyx's nose position
-  const radius = 50; // Delivery zone radius for text positioning
-  const requiredFireflies = getReqFireflies();
-  const capturedCount = otherFireflies.filter(f => f.captured).length;
-  const canDeliver = capturedCount >= requiredFireflies;
-
-  // No visible delivery zone ring - zone is invisible but still functional
-  
-  x.save();
-  
-  x.setLineDash([]); // Reset dash pattern
-  x.restore();
-  
-  // No delivery zone UI elements - zone is invisible but functional
+  // Delivery zone is invisible but functional - no visual elements needed
 };
 
 // ===== LEADERBOARD SYSTEM =====
@@ -2783,9 +2770,8 @@ const checkDeliveryZone = (playerX, playerY) => {
   
   if (distance < CFG.deliveryRadius) {
     const capturedFireflies = otherFireflies.filter(f => f.captured);
-    const requiredFireflies = getReqFireflies();
     
-    if (capturedFireflies.length >= requiredFireflies) {
+    if (capturedFireflies.length > 0) {
       deliverFireflies(capturedFireflies);
       return true;
     }
@@ -4119,7 +4105,7 @@ const activateShield = (isHoldAction = false) => {
   shieldActive = true;
   lastShieldTime = Date.now();
   
-  // DEBUG: Log shield activation
+
   // Play appropriate sound based on action type
   handleShieldAudio(isHoldAction);
   
