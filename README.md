@@ -19,11 +19,11 @@ This is an **addictive clicker game** with a 3-minute survival challenge:
 5. **Shield timing** - when her eyes flash, activate shield to protect fireflies
 6. **Build delivery streaks** - consecutive deliveries multiply your score, but streaks break on failure!
 
-### Firefly Species & Scoring
-- **Basic Green**: 1 point, slow (safe choice)
-- **Silver**: 2 points, faster 
-- **Golden**: 3 points, fast
-- **Royal Purple**: 5 points, very fast (high risk/reward)
+### Firefly Evolution & Scoring
+- **Green**: 5 points, slow (safe base tier)
+- **Purple**: 15 points, faster (evolved once)
+- **Gold**: 25 points, fast (evolved twice)
+- **Rainbow**: 40 points, very fast (maximum evolution, high risk/reward)
 
 **Victory**: Curiosity above -50 for 3 minutes + 1000 completion bonus + (streak × 50)
 
@@ -32,6 +32,7 @@ This is an **addictive clicker game** with a 3-minute survival challenge:
 - **Mouse Movement**: Guide Lampyris and collect fireflies
 - **Click/Spacebar (Rapid)**: Summon fireflies - click rapidly for more! (costs bioluminescence/mana)
 - **Hold (Click/Spacebar)**: Activate protective shield (costs bioluminescence/mana)
+- **Right-Click/X Key**: Drop captured fireflies with temporary immunity (strategic for evolved fireflies)
 - **ESC**: Show/hide help menu
 - **M**: Toggle audio on/off
 
