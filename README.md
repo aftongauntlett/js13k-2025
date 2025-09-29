@@ -51,10 +51,15 @@ This is an **addictive clicker game** with a 3-minute survival challenge:
 
 ## Technical Details
 
-- **Engine**: Vanilla JavaScript with Canvas 2D
+- **Engine**: Vanilla JavaScript with Canvas 2D (no WebGL, no libraries, no frameworks)
+- **Advanced Canvas 2D Features**: 
+  - Multi-layer particle systems with physics simulation
+  - Real-time radial/linear gradients and shadow effects
+  - Curved path rendering with quadratic Bézier curves
+  - Performance-optimized state caching and batch rendering
 - **Size**: Optimized for js13k competition (<13KB zipped)
-- **Performance**: 60fps gameplay with efficient rendering
-- **Audio**: Dynamic sound effects and ambient background music
+- **Performance**: 60fps gameplay with hundreds of particles and complex visual effects
+- **Audio**: Dynamic procedural sound effects and ambient background music
 
 ## Development
 
