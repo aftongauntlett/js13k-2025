@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Firebase Leaderboard Test</title>
+<style>
+body {
+  font-family: monospace;
+  padding: 20px;
+  background: #1a1a2e;
+  color: #eee;
+}
+.test-section {
+  margin: 20px 0;
+  padding: 15px;
+  background: #16213e;
+  border-radius: 8px;
+}
+.success { color: #4ade80; }
+.error { color: #f87171; }
+.warning { color: #fbbf24; }
+.info { color: #60a5fa; }
+button {
+  background: #4ade80;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  margin: 5px;
+}
+button:hover {
+  background: #22c55e;
+}
+#results {
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+</style>
+</head>
+<body>
+<h1>🔥 Firebase Leaderboard Testing Tool</h1>
+
+<div class="test-section">
+  <h2>Test Controls</h2>
+  <button onclick="runAllTests()">Run All Tests</button>
+  <button onclick="testFirebaseInit()">Test Firebase Init</button>
+  <button onclick="testReadLeaderboard()">Test Read Leaderboard</button>
+  <button onclick="testAddScore()">Test Add Score</button>
+  <button onclick="clearResults()">Clear Results</button>
+  <button onclick="copyResults()">📋 Copy Results</button>
+</div>
+
+<div class="test-section">
+  <h2>Test Results</h2>
+  <div id="results"></div>
+  <div id="copyFeedback" style="display:none; margin-top:10px; padding:10px; background:#4ade80; color:#000; border-radius:5px;">
+    ✅ Results copied to clipboard!
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+// Firebase config
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBJ2FZhHTr75xEyAi5KTCinroTEEgW5_O4",
+  authDomain: "js13k-2025.firebaseapp.com",
+  projectId: "js13k-2025",
+  storageBucket: "js13k-2025.firebasestorage.app",
+  messagingSenderId: "603587502235",
+  appId: "1:603587502235:web:b86222da63ec0b4b90a63e"
+};
+
+const results = document.getElementById('results');
+
+function log(message, type = 'info') {
+  const timestamp = new Date().toLocaleTimeString();
+  const className = type;
+  const icon = {
+    success: '✅',
+    error: '❌',
+    warning: '⚠️',
+    info: 'ℹ️'
+  }[type] || 'ℹ️';
+  
+  results.innerHTML += `<span class="${className}">[${timestamp}] ${icon} ${message}</span>\n`;
+  results.scrollTop = results.scrollHeight;
+}
+
+function clearResults() {
+  results.innerHTML = '';
+}
+
+function copyResults() {
+  const resultsText = results.innerText;
+  
+  navigator.clipboard.writeText(resultsText).then(() => {
+    // Show feedback
+    const feedback = document.getElementById('copyFeedback');
+    feedback.style.display = 'block';
+    setTimeout(() => {
+      feedback.style.display = 'none';
+    }, 2000);
+  }).catch(err => {
+    log('Failed to copy: ' + err.message, 'error');
+  });
+}
+
+function testFirebaseInit() {
+  log('Testing Firebase initialization...', 'info');
+  
+  try {
+    // Check if Firebase SDK loaded
+    if (typeof firebase === 'undefined') {
+      log('Firebase SDK not loaded!', 'error');
+      return false;
+    }
+    log('Firebase SDK loaded', 'success');
+    
+    // Initialize Firebase
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      log('Firebase initialized successfully', 'success');
+    } else {
+      log('Firebase already initialized', 'success');
+    }
+    
+    // Check Firestore
+    const db = firebase.firestore();
+    if (db) {
+      window.db = db;
+      log('Firestore database connected', 'success');
+      log(`Project ID: ${FIREBASE_CONFIG.projectId}`, 'info');
+      return true;
+    } else {
+      log('Firestore database connection failed', 'error');
+      return false;
+    }
+  } catch (error) {
+    log(`Firebase init error: ${error.message}`, 'error');
+    console.error(error);
+    return false;
+  }
+}
+
+async function testReadLeaderboard() {
+  log('Testing leaderboard read...', 'info');
+  
+  try {
+    if (!window.db) {
+      log('Database not initialized - run init test first', 'error');
+      return;
+    }
+    
+    const snapshot = await window.db.collection('leaderboard')
+      .orderBy('score', 'desc')
+      .limit(10)
+      .get();
+    
+    log(`Found ${snapshot.docs.length} leaderboard entries`, 'success');
+    
+    if (snapshot.docs.length > 0) {
+      log('Top scores:', 'info');
+      snapshot.docs.forEach((doc, i) => {
+        const data = doc.data();
+        log(`  ${i + 1}. ${data.name}: ${data.score} (${data.date || 'no date'})`, 'info');
+      });
+    } else {
+      log('Leaderboard is empty - add some scores!', 'warning');
+    }
+  } catch (error) {
+    log(`Read error: ${error.message}`, 'error');
+    console.error(error);
+  }
+}
+
+async function testAddScore() {
+  log('Testing score submission...', 'info');
+  
+  try {
+    if (!window.db) {
+      log('Database not initialized - run init test first', 'error');
+      return;
+    }
+    
+    const testScore = {
+      name: `TestPlayer${Math.floor(Math.random() * 1000)}`,
+      score: Math.floor(Math.random() * 5000) + 1000,
+      streak: Math.floor(Math.random() * 20),
+      perfectShields: Math.floor(Math.random() * 10),
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    log(`Submitting test score: ${testScore.name} - ${testScore.score}`, 'info');
+    
+    const docRef = await window.db.collection('leaderboard').add(testScore);
+    
+    log(`Score saved successfully! Doc ID: ${docRef.id}`, 'success');
+    log('Refreshing leaderboard...', 'info');
+    
+    // Read back to verify
+    setTimeout(() => testReadLeaderboard(), 500);
+    
+  } catch (error) {
+    log(`Submit error: ${error.message}`, 'error');
+    console.error(error);
+    
+    if (error.code === 'permission-denied') {
+      log('Permission denied - check Firestore rules', 'error');
+      log('Expected rules: allow read, create: if true', 'info');
+    }
+  }
+}
+
+async function runAllTests() {
+  clearResults();
+  log('=== Starting Full Test Suite ===', 'info');
+  log('', 'info');
+  
+  // Test 1: Initialize
+  const initSuccess = testFirebaseInit();
+  if (!initSuccess) {
+    log('', 'info');
+    log('Cannot continue - Firebase initialization failed', 'error');
+    return;
+  }
+  
+  // Wait a bit for init
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  log('', 'info');
+  
+  // Test 2: Read
+  await testReadLeaderboard();
+  
+  log('', 'info');
+  
+  // Test 3: Write
+  await testAddScore();
+  
+  log('', 'info');
+  log('=== Test Suite Complete ===', 'info');
+}
+
+// Auto-run on load
+window.onload = () => {
+  log('Firebase Leaderboard Test Tool Ready', 'success');
+  log('Click "Run All Tests" to begin', 'info');
+  log('', 'info');
+};
+</script>
+</body>
+</html>

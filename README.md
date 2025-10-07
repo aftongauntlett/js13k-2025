@@ -61,6 +61,16 @@ npm start    # Development server
 npm run build # Production build
 ```
 
+### Testing Firebase Leaderboard
+
+The game uses Firebase Firestore for cross-player leaderboards. To test the connection:
+
+1. Start the dev server: `npm start`
+2. Open: http://localhost:8000/firebase-test.html
+3. Click "Run All Tests" to verify Firebase is working
+
+See `FIREBASE_TEST_README.md` for detailed testing instructions.
+
 ## Repository Structure
 
 This repository tracks the evolution of the game:

@@ -890,15 +890,15 @@ const submitScore = (submittedName, reason) => {
   scoreAlreadySubmitted = true;
 };
 
-// Firebase config - loaded from Vercel environment variables
-const FIREBASE_CONFIG = typeof process !== 'undefined' && process.env ? {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
-} : null; // Falls back to localStorage when env vars not available
+// Firebase config - client-safe credentials (protected by Firestore rules)
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBJ2FZhHTr75xEyAi5KTCinroTEEgW5_O4",
+  authDomain: "js13k-2025.firebaseapp.com",
+  projectId: "js13k-2025",
+  storageBucket: "js13k-2025.firebasestorage.app",
+  messagingSenderId: "603587502235",
+  appId: "1:603587502235:web:b86222da63ec0b4b90a63e"
+};
 
 let firebaseEnabled = false;
 if (FIREBASE_CONFIG && typeof firebase !== 'undefined') {
@@ -906,7 +906,9 @@ if (FIREBASE_CONFIG && typeof firebase !== 'undefined') {
     firebase.initializeApp(FIREBASE_CONFIG);
     window.db = firebase.firestore();
     firebaseEnabled = true;
+    console.log('✅ Firebase connected - leaderboard is live!');
   } catch (error) {
+    console.warn('⚠️ Firebase failed - using local leaderboard only:', error.message);
     firebaseEnabled = false;
   }
 }
