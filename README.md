@@ -1,104 +1,74 @@
-# ✨ Nyx Felis and Lampyris ✨
+# ✨ Nyx Felis and Lampyris 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![js13k](https://img.shields.io/badge/js13k-2025-orange.svg)](https://js13kgames.com/)
-[![Size](https://img.shields.io/badge/size-<13KB-brightgreen.svg)](#)
-[![Commits](https://img.shields.io/github/commit-activity/t/aftongauntlett/js13k-2025?style=flat&logo=git&logoColor=white&label=commits&color=blue)](https://github.com/aftongauntlett/js13k-2025/commits)
+[![Submission](https://img.shields.io/badge/submission-12.5KB-brightgreen.svg)](#)
+[![Enhanced](https://img.shields.io/badge/enhanced-22KB-blue.svg)](#)
 
-## Game Overview
+> *Guide fireflies through the eternal night, master shield timing to evolve them, and keep Nyx Felis curious in this fast-paced 3-minute survival challenge*
 
-You are **Lampyris**, a mystical guide of fireflies in the eternal night. Your mission: collect fireflies and deliver them to **Nyx Felis** (the great cat) to maintain her curiosity about the night world.
+**[Play the original submission (12.5KB) →](https://js13kgames.com/2025/games/nyx-felis-and-lampyris)**
 
-### How to Play
-This is an **addictive clicker game** with a 3-minute survival challenge:
+**[Play the enhanced version (22KB) →](https://nyx-felis.aftongauntlett.com/)**
 
-1. **Click rapidly** to summon fireflies (costs mana)
-2. **Move to collect** them around your character  
-3. **Watch the delivery pressure timer** - green bar at bottom shows time until curiosity decay
-4. **Deliver to Nyx** before the timer turns red (15 second deadline)
-5. **Shield timing** - Any active shield (with mana) prevents attacks; better timing = better evolution
-6. **Build delivery streaks** - consecutive deliveries multiply your score, but streaks break on failure!
+## About
 
-### Firefly Evolution & Scoring
-- **Green**: 5 points, slow (safe base tier)
-- **Purple**: 15 points, faster (evolved once)
-- **Gold**: 25 points, fast (evolved twice)
-- **Rainbow**: 40 points, very fast (maximum evolution, high risk/reward)
+You are **Lampyris**, a guide of fireflies in the eternal night. Collect and deliver fireflies to **Nyx Felis** (the great cat) to maintain her curiosity. Survive for 3 minutes to win!
 
-**Pro Strategy**: Drop evolved fireflies before shielding, then recollect to re-evolve them for rainbow tier!
+**Core Loop**: Summon → Collect → Shield → Evolve → Deliver → Repeat
 
-**Victory**: Curiosity above -50 for 3 minutes + 1000 completion bonus + (streak × 50)
+## Quick Start
 
-## Controls
+### Controls
+- **Mouse**: Move and collect fireflies
+- **Click/Space**: Tap to summon, hold to shield
+- **Right-Click/X**: Drop fireflies strategically
+- **ESC/M/L**: Help, audio, leaderboard
 
-- **Mouse Movement**: Guide Lampyris and collect fireflies
-- **Click/Spacebar (Rapid)**: Summon fireflies - click rapidly for more! (costs mana)
-- **Hold (Click/Spacebar)**: Activate protective shield (costs mana)
-- **Right-Click/X Key**: Drop captured fireflies with temporary immunity (strategic for evolved fireflies)
-- **ESC**: Show/hide help menu
-- **M**: Toggle audio on/off
+### Win Condition
+Stay alive for 3 minutes by delivering fireflies before the curiosity timer expires (15s deadline).
 
-## Key Mechanics
+## Key Features
 
-- **Delivery Pressure Timer**: Visual countdown shows exactly when curiosity decays (every 15 seconds)
-  - Green: Safe zone (10+ seconds remaining)
-  - Yellow: Warning zone (5-10 seconds) 
-  - Red: Critical zone (<5 seconds)
-- **Streak System**: Consecutive deliveries build score multipliers up to 300% - but fail once and lose it all!
-- **Curiosity System**: Nyx's interest decays without deliveries. Reach -50 = game over  
-- **Shield Mechanics**: 
-  - 3 colored flashes are WARNINGS - the attack comes AFTER the 3rd flash
-  - Any active shield (with mana) = NO claw marks, NO attack damage
-  - Better timing = better rewards: 3rd flash (PERFECT) > 2nd flash (GREAT) > 1st flash (GOOD)
-  - PERFECT: all fireflies protected AND evolved | GREAT: 75% evolve | GOOD: 50% evolve
-  - No shield or no mana = claw marks appear + fireflies flee/revert
-- **Mana Management**: Summoning and shielding cost mana. Recover mana by delivering fireflies to Nyx
-- **Strategic Risk/Reward**: Drop evolved fireflies before shielding to recollect and re-evolve for max points
-- **Dynamic Difficulty**: Nyx's gaze shifts become quicker over time
+### Firefly Evolution Chain
+Green (5pts) → Purple (15pts) → Gold (25pts) → Rainbow (40pts)
+
+Shield with perfect timing during Nyx's attacks to evolve fireflies into higher tiers.
+
+### Shield Timing System
+Watch for **3 warning flashes** before each attack:
+- **Perfect** (3rd flash): 100% evolution + protection
+- **Great** (2nd flash): 75% evolution + protection  
+- **Good** (1st flash): 50% evolution + protection
+- **No shield**: Fireflies flee, streak resets
+
+### Advanced Strategy
+Drop evolved fireflies → recollect → shield again → reach rainbow tier faster!
 
 ## Technical Details
 
-- **Engine**: Vanilla JavaScript with Canvas 2D (no WebGL, no libraries, no frameworks)
-- **Advanced Canvas 2D Features**: 
-  - Multi-layer particle systems with physics simulation
-  - Real-time radial/linear gradients and shadow effects
-  - Curved path rendering with quadratic Bézier curves
-  - Performance-optimized state caching and batch rendering
-- **Size**: Optimized for js13k competition (<13KB zipped)
-- **Performance**: 60fps gameplay with hundreds of particles and complex visual effects
-- **Audio**: Dynamic procedural sound effects and ambient background music
+- **Engine**: Vanilla JavaScript + Canvas 2D
+- **Features**: Particle systems, procedural audio, dynamic gradients
+- **Performance**: 60fps with hundreds of particles
+- **Original Submission**: 12.5KB (js13k 2025)
+- **Enhanced Version**: 22KB (post-jam improvements)
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm start
-
-# Build for production
-npm run build
+npm install  # Install dependencies
+npm start    # Development server
+npm run build # Production build
 ```
 
-## Repository Information
+## Repository Structure
 
-This repository contains both the original JS13k 2025 competition submission and ongoing improvements:
+This repository tracks the evolution of the game:
 
-- **Original Submission**: Tagged as `submission-2025` - the exact code submitted to the JS13k competition
-- **Ongoing Development**: The `main` branch contains post-jam improvements, fixes, and new features
-- **Competition Entry**: This was an official entry in the [js13k Games 2025 Competition](https://js13kgames.com/)
-
-## Post-Mortem
-
-For detailed insights into the development process, challenges faced, and lessons learned during the JS13k 2025 competition, read the full post-mortem:
-
-**[🔗 JS13k 2025 Post-Mortem](https://aftongauntlett.com/js13k-2025-post-mortem)**
+- **`submission-2025` tag**: Original 12.5KB competition entry
+- **`main` branch**: Enhanced version (22KB) with improved audio, visuals, and tutorial system
+- **Post-Mortem**: [Read about the development journey →](https://www.aftongauntlett.com/blog/js13k-2025-post-mortem)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-*Entry for js13k Games 2025 Competition - Built with ✨ by [Afton Gauntlett](https://github.com/aftongauntlett)*
+MIT License - Built with ✨ by [Afton Gauntlett](https://github.com/aftongauntlett)
