@@ -2120,6 +2120,14 @@ const handleShieldProtection = (capturedFireflies, now) => {
   
   addScoreText(shieldMessage, w / 2, h / 2 - 80, messageColors[timingQuality], 300);
   
+  // Show firefly loss feedback
+  if (firefliesLost > 0) {
+    const lossText = firefliesLost === 1 ? '1 firefly lost' : `${firefliesLost} fireflies lost`;
+    setTimeout(() => {
+      addScoreText(lossText, w / 2, h / 2 - 40, '#ff6666', 240);
+    }, 300);
+  }
+  
   // Tutorial-specific messaging for drop lesson
   if (!tutorialComplete && (tutorialStep === 3 || tutorialStep === 4) && timingQuality === "MISSED") {
     const evolvedOutside = firefliesOutsideShield.filter(f => f.color !== '#88ff88').length;
@@ -2184,6 +2192,12 @@ const handleNoPenalty = (capturedFireflies) => {
     } else {
       addScoreText('NO SHIELD!', w / 2, h / 2 - 80, '#ff9999', 300);
     }
+    
+    // Show firefly loss count
+    const lossText = firefliesLost === 1 ? '1 firefly lost' : `${firefliesLost} fireflies lost`;
+    setTimeout(() => {
+      addScoreText(lossText, w / 2, h / 2 - 40, '#ff6666', 240);
+    }, 300);
   } else {
     addScoreText('NO LOSS', w / 2, h / 2 - 60, "#99ff99", 180);
   }
