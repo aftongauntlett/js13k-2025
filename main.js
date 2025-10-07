@@ -131,23 +131,53 @@ let shieldNodes = null; // Will hold multiple oscillators for magical shimmer
 const playShieldChime = () => {
   if (!audioEnabled || !initAudio()) return;
   
-  // Ethereal chime sound - two overlapping tones
-  const freq1 = 800;
-  const freq2 = 1200;
+  // Magical "next level" shimmer sound - layered ascending tones with sparkle
+  const now = a.currentTime;
+  const baseFreqs = [600, 800, 1000, 1200]; // Ascending tones for "level up" feel
+  const duration = 0.5;
   
-  [freq1, freq2].forEach((freq, i) => {
+  baseFreqs.forEach((freq, i) => {
     const osc = a.createOscillator();
     const gain = a.createGain();
+    const filter = a.createBiquadFilter();
     
+    // Triangle wave for a brighter, more noticeable sound
+    osc.type = 'triangle';
     osc.frequency.value = freq;
-    osc.type = 'sine';
-    gain.gain.value = 0.08 * (i === 0 ? 1 : 0.6); // Second tone quieter
-    gain.gain.exponentialRampToValueAtTime(0.01, a.currentTime + 0.3);
     
-    osc.connect(gain).connect(a.destination);
-    osc.start();
-    osc.stop(a.currentTime + 0.3);
+    // Slightly delay each tone for a cascading shimmer effect
+    const delay = i * 0.04;
+    const startTime = now + delay;
+    
+    // Filter for extra sparkle
+    filter.type = 'bandpass';
+    filter.frequency.value = freq * 2;
+    filter.Q.value = 3;
+    
+    // Envelope for a bright attack and gentle decay
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(0.12 * (1 - i * 0.15), startTime + 0.02); // Quick bright attack
+    gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+    
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(a.destination);
+    
+    osc.start(startTime);
+    osc.stop(startTime + duration);
   });
+  
+  // Add a high "ting" for extra sparkle
+  const tingOsc = a.createOscillator();
+  const tingGain = a.createGain();
+  tingOsc.type = 'sine';
+  tingOsc.frequency.value = 2400;
+  tingGain.gain.setValueAtTime(0, now + 0.1);
+  tingGain.gain.linearRampToValueAtTime(0.08, now + 0.12);
+  tingGain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+  tingOsc.connect(tingGain).connect(a.destination);
+  tingOsc.start(now + 0.1);
+  tingOsc.stop(now + 0.4);
 };
 
 const startShieldShimmer = () => {
@@ -235,6 +265,73 @@ const handleShieldAudio = (isHoldAction = false) => {
     // For taps: just play the chime, no hum
     playShieldChime();
   }
+};
+
+// Deep purr/rumble sound for cat attacks (no shield)
+const playCatAttackSound = () => {
+  if (!audioEnabled || !initAudio()) return;
+  
+  const now = a.currentTime;
+  const duration = 0.6;
+  
+  // Create a deep, menacing rumble with multiple low frequencies
+  const frequencies = [80, 120, 160]; // Deep bass frequencies for rumble/purr
+  
+  frequencies.forEach((freq, i) => {
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    const filter = a.createBiquadFilter();
+    
+    // Use sawtooth for harsh, aggressive tone
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    
+    // Low-pass filter for deep rumble quality
+    filter.type = 'lowpass';
+    filter.frequency.value = 200 + (i * 50);
+    filter.Q.value = 2;
+    
+    // Aggressive attack, sustained rumble
+    const volume = 0.15 - (i * 0.03);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(volume, now + 0.05); // Quick attack
+    gain.gain.setValueAtTime(volume, now + 0.3); // Sustain the rumble
+    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+    
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(a.destination);
+    
+    osc.start(now);
+    osc.stop(now + duration);
+  });
+  
+  // Add a growl-like modulation
+  const modOsc = a.createOscillator();
+  const modGain = a.createGain();
+  const carrier = a.createOscillator();
+  const carrierGain = a.createGain();
+  
+  modOsc.type = 'sine';
+  modOsc.frequency.value = 6; // Slow modulation for growl effect
+  modGain.gain.value = 20;
+  
+  carrier.type = 'sawtooth';
+  carrier.frequency.value = 100;
+  
+  carrierGain.gain.setValueAtTime(0, now);
+  carrierGain.gain.linearRampToValueAtTime(0.12, now + 0.05);
+  carrierGain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+  
+  modOsc.connect(modGain);
+  modGain.connect(carrier.frequency);
+  carrier.connect(carrierGain);
+  carrierGain.connect(a.destination);
+  
+  modOsc.start(now);
+  carrier.start(now);
+  modOsc.stop(now + duration);
+  carrier.stop(now + duration);
 };
 
 // ===== BACKGROUND MUSIC SYSTEM =====
@@ -634,6 +731,29 @@ const updateWarningFlashes = () => {
 const isCurrentlyFlashing = () => {
   return warningFlashState.isActive && warningFlashState.currentFlash > 0;
 };
+
+// Claw marks attack visual feedback system
+let clawMarksActive = false;
+let clawMarksTimer = 0;
+let clawMarksType = 'double'; // 'double' for missed/no shield, 'single' for good/great
+const CLAW_MARKS_DURATION = 120; // 2 seconds
+
+// Rainbow glitter effect for perfect shields
+let rainbowGlitterActive = false;
+let rainbowGlitterTimer = 0;
+const RAINBOW_GLITTER_DURATION = 60; // 1 second
+
+// Shield success outline effect (shows on any successful shield)
+let shieldOutlineActive = false;
+let shieldOutlineTimer = 0;
+let shieldOutlineQuality = 'GOOD'; // 'PERFECT', 'GREAT', or 'GOOD'
+const SHIELD_OUTLINE_DURATION = 90; // 1.5 seconds
+
+// Angry cat reaction for perfect shields
+let catAngryActive = false;
+let catAngryTimer = 0;
+const CAT_ANGRY_DURATION = 45; // 0.75 seconds
+
 let manaEnergy = 100;
 let summonHeat = 0, summonOverheated = false, overheatStunned = false;
 let screenShake = 0; // Screen shake intensity
@@ -646,6 +766,8 @@ let lastOverheatAttempt = 0; // Track when player tried to use abilities while o
 let shieldActive = false, shieldCooldown = 0, lastShieldTime = 0;
 let shieldCharging = false; // Track when shield is charging up
 let shieldSuccessFlash = 0, shieldPerfectFlash = 0; // Success feedback timers
+let shieldActivationPhase = -1; // Track which flash phase shield was first activated in (-1 = not during warning)
+let shieldAttemptedNoMana = false; // Track if player tried to shield but had no mana
 
 // Repel system (right-click/X key)
 let xPressed = false; // Track X key state to prevent double-drops
@@ -672,9 +794,6 @@ let shieldStats = { perfect: 0, great: 0, good: 0, missed: 0 };
 let tierStats = { green: 0, purple: 0, gold: 0, rainbow: 0, created: { purple: 0, gold: 0, rainbow: 0 }, lost: { purple: 0, gold: 0, rainbow: 0 } };
 let audioEnabled = true, pageVisible = true;
 let lastSpawnTime = 0; // For progressive difficulty spawning
-
-// Infinite mode system
-let infiniteMode = false; // Infinite mode toggle
 
 // Idle tracking for firefly dispersal
 let lastPlayerMoveTime = Date.now();
@@ -730,8 +849,8 @@ const handleVictory = (reason = "victory") => {
   
   // Check leaderboard qualification and set up name input immediately
   scoreQualifiesForLeaderboard(finalScore).then(qualifies => {
-    // Immediately set up name input if qualified (and not in infinite mode)
-    if (qualifies && !infiniteMode && !scoreAlreadySubmitted && finalScore > 0) {
+    // Immediately set up name input if qualified
+    if (qualifies && !scoreAlreadySubmitted && finalScore > 0) {
       pendingScore = {
         score: finalScore,
         gameWon: true
@@ -806,6 +925,11 @@ let mouseNearCat = false, catProximity = 0;
 
 
 // Tutorial system
+// Check for ?tutorial=reset URL parameter to force tutorial reset
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('tutorial') === 'reset') {
+  localStorage.removeItem('tutorialComplete');
+}
 let tutorialComplete = localStorage.getItem('tutorialComplete') === 'true';
 let tutorialStep = 0, firstDeliveryMade = false, tutorialTimer = 0;
 let tutorialDeliveryCount = 0; // Track how many deliveries made in tutorial
@@ -1126,16 +1250,19 @@ const drawWhiskers = (dir, eyeX, eyeY, twitch, now) => {
   }
 };
 
-// Draw mystical grin outline using twinkling stars
+// Draw mystical grin outline using twinkling stars (flips to frown when angry)
 const drawMysticalGrin = (eyeX, eyeY, now, mouseInSky, catProximity) => {
   const grinCenterX = eyeX;
   const grinCenterY = eyeY + 85; // Moved up toward nose
   
   // Create the ":3" cat mouth - two curves that angle INWARD toward center
+  // When angry, flip the curves to make a frown
   const starsPerSide = 6; // Fewer stars for cleaner look
   const sideWidth = 70; // Width of each side curve
   const curveHeight = 18; // How much each curve rises toward center
   const separation = 20; // Gap between the two curves at center
+  const isAngry = catAngryActive && catAngryTimer > 0;
+  const curveDirection = isAngry ? -1 : 1; // Flip curve when angry
   
   // Base brightness - dim by default, bright on sky hover
   const baseAlpha = mouseInSky ? 0.6 : 0.2; // Dimmer when not hovered
@@ -1146,9 +1273,9 @@ const drawMysticalGrin = (eyeX, eyeY, now, mouseInSky, catProximity) => {
     const t = i / (starsPerSide - 1); // 0 to 1
     const starX = grinCenterX - separation - t * sideWidth; // Start from center, go left
     
-    // Curve that goes DOWN and INWARD - like the left side of a heart bottom
-    const curveAmount = sin(t * Math.PI) * curveHeight; // Sine gives smooth curve
-    const starY = grinCenterY + curveAmount; // Add to go downward
+    // Curve that goes DOWN and INWARD - like the left side of a heart bottom (or UP when angry)
+    const curveAmount = sin(t * Math.PI) * curveHeight * curveDirection; // Sine gives smooth curve
+    const starY = grinCenterY + curveAmount; // Add to go downward (or upward when angry)
     
     // Random twinkling timing for each star - slower when not hovered
     const twinkleSpeed = mouseInSky ? 0.006 : 0.002; // Faster sparkle on hover
@@ -1171,9 +1298,9 @@ const drawMysticalGrin = (eyeX, eyeY, now, mouseInSky, catProximity) => {
     const t = i / (starsPerSide - 1); // 0 to 1
     const starX = grinCenterX + separation + t * sideWidth; // Start from center, go right
     
-    // Same curve but mirrored - goes DOWN and INWARD
-    const curveAmount = sin(t * Math.PI) * curveHeight;
-    const starY = grinCenterY + curveAmount; // Add to go downward
+    // Same curve but mirrored - goes DOWN and INWARD (or UP when angry)
+    const curveAmount = sin(t * Math.PI) * curveHeight * curveDirection;
+    const starY = grinCenterY + curveAmount; // Add to go downward (or upward when angry)
     
     // Different random timing for right side
     const twinkleSpeed = mouseInSky ? 0.006 : 0.002; // Faster sparkle on hover
@@ -1201,9 +1328,33 @@ const drawMysticalGrin = (eyeX, eyeY, now, mouseInSky, catProximity) => {
   x.shadowBlur = 4;
   setFill(`rgba(255, 255, 255, ${centerAlpha})`);
   x.beginPath();
-  x.arc(grinCenterX, grinCenterY + curveHeight * 0.7, 0.8 + centerTwinkle * 0.3 + hoverBoost * 0.3, 0, TAU);
+  x.arc(grinCenterX, grinCenterY + curveHeight * 0.7 * curveDirection, 0.8 + centerTwinkle * 0.3 + hoverBoost * 0.3, 0, TAU);
   x.fill();
   x.shadowBlur = 0;
+  
+  // Draw angry eyebrows when cat is angry
+  if (isAngry) {
+    const eyebrowAlpha = 0.7;
+    x.save();
+    x.globalAlpha = eyebrowAlpha;
+    setStroke('#ffaa44');
+    setLineWidth(4);
+    x.lineCap = 'round';
+    
+    // Left eyebrow (angled down toward center)
+    x.beginPath();
+    x.moveTo(grinCenterX - 140, grinCenterY - 160);
+    x.lineTo(grinCenterX - 80, grinCenterY - 140);
+    x.stroke();
+    
+    // Right eyebrow (angled down toward center)
+    x.beginPath();
+    x.moveTo(grinCenterX + 80, grinCenterY - 140);
+    x.lineTo(grinCenterX + 140, grinCenterY - 160);
+    x.stroke();
+    
+    x.restore();
+  }
 };
 
 // Draw the complete cat face with eyes, nose, and whiskers
@@ -1230,13 +1381,14 @@ const drawCatEyes = (now) => {
   
   if (isWarning && otherFireflies.some(f => f.captured)) {
     const flashPhase = CFG.warnFrames - timeUntilChange;
-    const shouldFlash = 
-      (flashPhase >= CFG.flash1 && flashPhase < CFG.flash1 + 20) ||
-      (flashPhase >= CFG.flash2 && flashPhase < CFG.flash2 + 20) ||
-      (flashPhase >= CFG.flash3 && flashPhase < CFG.flash3 + 20);
     
-    if (shouldFlash) {
-      flashIntensity = 1.5; // Enhanced flash
+    // Enhanced cat eye intensity escalating toward perfect timing
+    if (flashPhase >= CFG.flash1 && flashPhase < CFG.flash1 + 20) {
+      flashIntensity = 1.3; // First warning - moderate intensity
+    } else if (flashPhase >= CFG.flash2 && flashPhase < CFG.flash2 + 20) {
+      flashIntensity = 1.5; // Second warning - higher intensity
+    } else if (flashPhase >= CFG.flash3 && flashPhase < CFG.flash3 + 20) {
+      flashIntensity = 2.0; // Third flash - maximum intensity (perfect timing window)
     }
   }
 
@@ -1474,9 +1626,8 @@ const updateCatEyes = (now) => {
 // Handle color change mechanics and shield protection
 const handleColorChange = (now) => {
   const capturedFireflies = otherFireflies.filter(f => f.captured);
-  
-
-
+  const freeFireflies = otherFireflies.filter(f => !f.captured);
+  const hasAnyFireflies = capturedFireflies.length > 0 || freeFireflies.length > 0;
   
   // NEW: Check all evolved fireflies for shield protection and revert unprotected ones
   handleEvolutionReversion();
@@ -1491,41 +1642,197 @@ const handleColorChange = (now) => {
   }
   
   // Handle free fireflies - now they're also protected by shields!
-  const freeFireflies = otherFireflies.filter(f => !f.captured);
-  if (freeFireflies.length > 0 && !shieldActive) {
-    // No shield active - remove only some free fireflies (not all!)
-    const firefliesEaten = Math.ceil(freeFireflies.length * 0.5); // Only eat 50% of free fireflies
-    const firefliesSaved = freeFireflies.length - firefliesEaten;
-    
-    // Make eaten fireflies flee like scared insects to screen edges
-    for (let i = 0; i < firefliesEaten && freeFireflies.length > 0; i++) {
-      const randomIndex = Math.floor(Math.random() * freeFireflies.length);
-      const firefly = freeFireflies.splice(randomIndex, 1)[0];
+  if (freeFireflies.length > 0) {
+    if (!shieldActive) {
+      // No shield active - remove only some free fireflies (not all!)
+      const firefliesEaten = Math.ceil(freeFireflies.length * 0.5); // Only eat 50% of free fireflies
+      const firefliesSaved = freeFireflies.length - firefliesEaten;
       
-      // Apply escape animation to free fireflies too
-      firefly.dyingAnimation = true;
-      firefly.deathTimer = 0;
-      firefly.deathMaxTime = 180; // 3 seconds to escape off screen
+      // Make eaten fireflies flee like scared insects to screen edges
+      for (let i = 0; i < firefliesEaten && freeFireflies.length > 0; i++) {
+        const randomIndex = Math.floor(Math.random() * freeFireflies.length);
+        const firefly = freeFireflies.splice(randomIndex, 1)[0];
+        
+        // Apply escape animation to free fireflies too
+        firefly.dyingAnimation = true;
+        firefly.deathTimer = 0;
+        firefly.deathMaxTime = 180; // 3 seconds to escape off screen
+        
+        // Scared fireflies flee upward toward the sky (same as captured fireflies)
+        let escapeAngle = -Math.PI/2; // Primarily upward
+        
+        // Add some randomness to escape direction (scared, erratic flight)
+        escapeAngle += (r() - 0.5) * 1.0; // Allow some spread but mostly upward
+        
+        // Fast panic flight speed - much faster than normal firefly movement
+        const panicSpeed = 4 + r() * 3; // 4-7 pixels per frame
+        firefly.vx = Math.cos(escapeAngle) * panicSpeed;
+        firefly.vy = Math.sin(escapeAngle) * panicSpeed;
+        
+        // Add particle trail effect for fleeing fireflies
+        createDeathEffect(firefly);
+      }
       
-      // Scared fireflies flee upward toward the sky (same as captured fireflies)
-      let escapeAngle = -Math.PI/2; // Primarily upward
+      totalLost += firefliesEaten;
       
-      // Add some randomness to escape direction (scared, erratic flight)
-      escapeAngle += (r() - 0.5) * 1.0; // Allow some spread but mostly upward
+      // Show claw marks for missed shields with free fireflies ONLY if no captured fireflies were protected
+      // This prevents "GOOD SHIELD!" message from showing alongside claw marks
+      if (firefliesEaten > 0 && capturedFireflies.length === 0) {
+        clawMarksActive = true;
+        clawMarksTimer = CLAW_MARKS_DURATION;
+        clawMarksType = 'double';
+        
+        // Play deep purr/rumble for cat attack
+        playCatAttackSound();
+        
+        // Show feedback
+        if (shieldAttemptedNoMana) {
+          addScoreText('NO MANA!', w / 2, h / 2 - 80, '#ffaa44', 240);
+        } else {
+          addScoreText('NO SHIELD!', w / 2, h / 2 - 80, '#ff9999', 240);
+        }
+      }
       
-      // Fast panic flight speed - much faster than normal firefly movement
-      const panicSpeed = 4 + r() * 3; // 4-7 pixels per frame
-      firefly.vx = Math.cos(escapeAngle) * panicSpeed;
-      firefly.vy = Math.sin(escapeAngle) * panicSpeed;
+      // Reset shield tracking
+      shieldActivationPhase = -1;
+      shieldAttemptedNoMana = false;
+    } else {
+      // Shield active with only free fireflies - provide feedback
+      // Determine timing quality based on shield activation
+      let timingQuality;
+      if (shieldActivationPhase === 3) {
+        timingQuality = "PERFECT";
+      } else if (shieldActivationPhase === 2) {
+        timingQuality = "GREAT";
+      } else if (shieldActivationPhase === 1) {
+        timingQuality = "GOOD";
+      } else {
+        timingQuality = "GOOD";
+      }
       
-      // Add particle trail effect for fleeing fireflies
-      createDeathEffect(firefly);
+      // Show message for free fireflies being saved
+      const messages = {
+        "PERFECT": "PERFECT SHIELD!",
+        "GREAT": "GREAT SHIELD!",
+        "GOOD": "GOOD SHIELD!"
+      };
+      const colors = {
+        "PERFECT": '#ffffff',
+        "GREAT": '#66ccff',
+        "GOOD": '#99ff99'
+      };
+      
+      addScoreText(messages[timingQuality] + " (FREE FIREFLIES SAFE)", w / 2, h / 2 - 80, colors[timingQuality], 180);
+      
+      // Play appropriate sound
+      if (timingQuality === "PERFECT") {
+        playTone(800, 0.3, 0.05);
+        shieldStats.perfect++;
+        shieldOutlineActive = true;
+        shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+        shieldOutlineQuality = 'PERFECT';
+        shieldStreak++;
+        bestStreak = Math.max(bestStreak, shieldStreak);
+      } else if (timingQuality === "GREAT") {
+        playTone(600, 0.2, 0.08);
+        shieldStats.great++;
+        shieldOutlineActive = true;
+        shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+        shieldOutlineQuality = 'GREAT';
+        shieldStreak++;
+        bestStreak = Math.max(bestStreak, shieldStreak);
+      } else if (timingQuality === "GOOD") {
+        playTone(500, 0.15, 0.1);
+        shieldStats.good++;
+        shieldOutlineActive = true;
+        shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+        shieldOutlineQuality = 'GOOD';
+        shieldStreak++;
+        bestStreak = Math.max(bestStreak, shieldStreak);
+      } else {
+        playTone(300, 0.3, 0.12);
+      }
+      
+      // Consume shield
+      shieldActive = false;
+      stopShieldShimmer();
+      shieldCooldown = CFG.shieldCooldown + getDifficulty() * 4;
+      shieldActivationPhase = -1;
+      shieldAttemptedNoMana = false;
     }
-    
-    totalLost += firefliesEaten;
-    
-    // Remove floating text for eaten fireflies - too much visual clutter
   }
+  
+  // Handle case when there are NO fireflies at all
+  if (!hasAnyFireflies) {
+    // If shield was active, consume it and show feedback
+    if (shieldActive) {
+      // Determine timing quality
+      let timingQuality;
+      if (shieldActivationPhase === 3) {
+        timingQuality = "PERFECT";
+      } else if (shieldActivationPhase === 2) {
+        timingQuality = "GREAT";
+      } else if (shieldActivationPhase === 1) {
+        timingQuality = "GOOD";
+      } else {
+        timingQuality = "GOOD";
+      }
+      
+      // Show message
+      const messages = {
+        "PERFECT": "PERFECT SHIELD!",
+        "GREAT": "GREAT SHIELD!",
+        "GOOD": "GOOD SHIELD!"
+      };
+      const colors = {
+        "PERFECT": '#ffffff',
+        "GREAT": '#66ccff',
+        "GOOD": '#99ff99'
+      };
+      
+      addScoreText(messages[timingQuality] + " (NO FIREFLIES)", w / 2, h / 2 - 80, colors[timingQuality], 240);
+      
+      // Play appropriate sound
+      if (timingQuality === "PERFECT") {
+        playTone(800, 0.3, 0.05);
+        shieldStats.perfect++;
+        // Show outline even with no fireflies
+        shieldOutlineActive = true;
+        shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+        shieldOutlineQuality = 'PERFECT';
+      } else if (timingQuality === "GREAT") {
+        playTone(600, 0.2, 0.08);
+        shieldStats.great++;
+        shieldOutlineActive = true;
+        shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+        shieldOutlineQuality = 'GREAT';
+      } else if (timingQuality === "GOOD") {
+        playTone(500, 0.15, 0.1);
+        shieldStats.good++;
+        shieldOutlineActive = true;
+        shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+        shieldOutlineQuality = 'GOOD';
+      } else {
+        playTone(300, 0.3, 0.12);
+      }
+      
+      // Consume shield
+      shieldActive = false;
+      stopShieldShimmer();
+      shieldCooldown = CFG.shieldCooldown + getDifficulty() * 4;
+      shieldActivationPhase = -1;
+      shieldAttemptedNoMana = false;
+    } else {
+      // No shield, no fireflies - just show a message
+      addScoreText("NO FIREFLIES TO PROTECT", w / 2, h / 2 - 80, '#999999', 180);
+      playTone(200, 0.2, 0.1);
+      
+      // Reset shield tracking
+      shieldActivationPhase = -1;
+      shieldAttemptedNoMana = false;
+    }
+  }
+
   
   changeToNewColor();
 };
@@ -1613,16 +1920,20 @@ const handleShieldProtection = (capturedFireflies, now) => {
   const { x: playerX, y: playerY } = getPlayerPosition();
   const shieldRadius = getShieldRadius();
   
-  // Determine shield timing quality - more forgiving ranges
-  if (flashPhase >= CFG.flash2 + 15 && flashPhase <= CFG.flash2 + 40) {
-    timingQuality = "PERFECT"; // Wider perfect window after 2nd flash
-
-  } else if (flashPhase >= CFG.flash2 - 10 && flashPhase <= CFG.flash3 + 15) {
-    timingQuality = "GREAT"; // Around 2nd flash through early 3rd flash
-  } else if (flashPhase >= CFG.flash1 - 10 && flashPhase <= CFG.warnFrames + 10) {
-    timingQuality = "GOOD"; // Most of warning period - very forgiving
+  // Determine shield timing quality - if shield is active during attack, it works!
+  // Quality based on when it was first activated during warning period
+  // NOTE: shieldAttemptedNoMana should have been reset, but if it wasn't, ignore it here
+  // because if we're in handleShieldProtection, shield IS active now
+  if (shieldActivationPhase === 3) {
+    timingQuality = "PERFECT"; // First activated during 3rd flash
+  } else if (shieldActivationPhase === 2) {
+    timingQuality = "GREAT"; // First activated during 2nd flash
+  } else if (shieldActivationPhase === 1) {
+    timingQuality = "GOOD"; // First activated during 1st flash
+  } else if (shieldActivationPhase === 0 || shieldActivationPhase === -2) {
+    timingQuality = "GOOD"; // Activated during warning period or held from before
   } else {
-    timingQuality = "MISSED"; // Only if way too early
+    timingQuality = "MISSED"; // Shield activated too late or not during warning
   }
   
   // Separate all fireflies into within/outside shield
@@ -1652,10 +1963,21 @@ const handleShieldProtection = (capturedFireflies, now) => {
     insideEvolutionRate = 1.0;
     
     shieldPerfectFlash = 60;
-    playTone(800, 0.3, 0.05);
+    playShieldChime(); // Shimmery success sound
     shieldStats.perfect++;
     shieldStreak++;
     bestStreak = Math.max(bestStreak, shieldStreak);
+    
+    // Trigger rainbow glitter effect and angry cat reaction
+    rainbowGlitterActive = true;
+    rainbowGlitterTimer = RAINBOW_GLITTER_DURATION;
+    catAngryActive = true;
+    catAngryTimer = CAT_ANGRY_DURATION;
+    
+    // Trigger shield outline effect
+    shieldOutlineActive = true;
+    shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+    shieldOutlineQuality = 'PERFECT';
     
   } else if (timingQuality === "GREAT") {
     // 75% outside saved, 75% inside evolve
@@ -1663,10 +1985,15 @@ const handleShieldProtection = (capturedFireflies, now) => {
     insideEvolutionRate = 0.75;
     
     shieldSuccessFlash = 30;
-    playTone(600, 0.2, 0.08);
+    playShieldChime(); // Shimmery success sound
     shieldStats.great++;
     shieldStreak++;
     bestStreak = Math.max(bestStreak, shieldStreak);
+    
+    // Trigger shield outline effect
+    shieldOutlineActive = true;
+    shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+    shieldOutlineQuality = 'GREAT';
     
   } else if (timingQuality === "GOOD") {
     // 50% outside saved, 50% inside evolve
@@ -1674,17 +2001,23 @@ const handleShieldProtection = (capturedFireflies, now) => {
     insideEvolutionRate = 0.5;
     
     shieldSuccessFlash = 15;
-    playTone(500, 0.15, 0.1);
+    playShieldChime(); // Shimmery success sound
     shieldStats.good++;
     shieldStreak++;
     bestStreak = Math.max(bestStreak, shieldStreak);
     
-  } else { // MISSED
+    // Trigger shield outline effect
+    shieldOutlineActive = true;
+    shieldOutlineTimer = SHIELD_OUTLINE_DURATION;
+    shieldOutlineQuality = 'GOOD';
+    
+  } else { // MISSED - shield activated too late or not during warning
     // 0% outside saved, 0% inside evolve (but inside are still protected from death)
     outsideSurvivalRate = 0.0;
     insideEvolutionRate = 0.0;
     
-    playTone(300, 0.3, 0.12);
+    // Deep purr/rumble for failed shield timing
+    playCatAttackSound();
     shieldStats.missed++;
     shieldStreak = 0;
   }
@@ -1749,6 +2082,8 @@ const handleShieldProtection = (capturedFireflies, now) => {
   shieldActive = false;
   stopShieldShimmer();
   shieldCooldown = CFG.shieldCooldown + getDifficulty() * 4;
+  shieldActivationPhase = -1; // Reset for next warning period
+  shieldAttemptedNoMana = false; // Reset for next warning period
   
   // Clear old feedback first
   clearShieldFeedback();
@@ -1798,6 +2133,9 @@ const handleShieldProtection = (capturedFireflies, now) => {
     tutorialStep = 3;
     tutorialMissedShield = false;
   }
+  
+  // NEVER show claw marks if shield is active - any active shield (even with bad timing) prevents attack visuals
+  // Claw marks are only for true attacks (no shield active OR no mana to activate shield)
 };
 
 // No shield protection - simplified penalty system
@@ -1839,7 +2177,11 @@ const handleNoPenalty = (capturedFireflies) => {
   clearShieldFeedback();
   
   if (firefliesLost > 0) {
-    addScoreText('NO SHIELD!', w / 2, h / 2 - 80, '#ff9999', 300);
+    if (shieldAttemptedNoMana) {
+      addScoreText('NO MANA!', w / 2, h / 2 - 80, '#ffaa44', 300); // Orange color to match shield protection
+    } else {
+      addScoreText('NO SHIELD!', w / 2, h / 2 - 80, '#ff9999', 300);
+    }
   } else {
     addScoreText('NO LOSS', w / 2, h / 2 - 60, "#99ff99", 180);
   }
@@ -1872,7 +2214,25 @@ const handleNoPenalty = (capturedFireflies) => {
   // Reduce shield cooldown since no shield was used
   shieldCooldown = Math.max(0, shieldCooldown - 30);
   
-  playTone(150, 0.3, 0.1);
+  // Reset shield activation phase for next warning period
+  shieldActivationPhase = -1;
+  
+  // Show claw marks for no shield or no mana attempts
+  if (shieldAttemptedNoMana) {
+    clawMarksActive = true;
+    clawMarksTimer = CLAW_MARKS_DURATION;
+    clawMarksType = 'double';
+  } else if (firefliesLost > 0) {
+    // No shield attempt and lost fireflies = show claw marks
+    clawMarksActive = true;
+    clawMarksTimer = CLAW_MARKS_DURATION;
+    clawMarksType = 'double';
+  }
+  
+  shieldAttemptedNoMana = false;
+  
+  // Deep purr/rumble for cat attack
+  playCatAttackSound();
 };
 
 // Helper functions for cat system
@@ -2143,6 +2503,8 @@ const clearShieldFeedback = () => {
 // Update and draw floating score texts
 const drawScoreTexts = () => {
   scoreTexts.forEach(text => {
+    x.save(); // Isolate each text rendering
+    
     const progress = text.life / text.maxLife;
     const alpha = 1 - progress; // Fade out over time
     
@@ -2167,14 +2529,17 @@ const drawScoreTexts = () => {
     const fontFamily = isTimingMessage ? FONTS.body : FONTS.mono;
     
     setFill(text.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
-    x.font = `${fontSize}px ${fontFamily}`;
+    setFont(`${fontSize}px ${fontFamily}`); // Use setFont instead of direct x.font
     x.textAlign = "center";
+    x.shadowBlur = 0; // Ensure no shadow pollution
     
     // Much slower movement for timing messages, moderate for others
     const moveSpeed = isTimingMessage ? 0.1 : 0.3;
     x.fillText(text.text, text.x, text.y - text.life * moveSpeed);
     
     text.life++;
+    
+    x.restore(); // Restore canvas state
   });
   
   // Remove expired texts
@@ -2283,7 +2648,7 @@ const spawnFireflyInArea = () => {
     floatTimer: r() * TAU,
     flashTimer: r() * TAU,
     roamTarget: null,
-    fadeIn: 1,
+    fadeIn: 0, // Fade in smoothly
     glowIntensity: 1.0 + r() * 0.5,
     size: 2 + r() * 2,
     tier: tier,
@@ -2306,9 +2671,9 @@ const spawnFirefly = (isPlayerSummoned = false) => {
   const points = 5;
   const protectionCount = 0;
   
-  // Spawn directly in gameplay area
+  // Spawn directly in gameplay area - match the clamping bounds in updateFreeFirefly
   const playAreaMargin = 80;
-  const topMargin = h * 0.25; // Avoid cat area
+  const topMargin = h * 0.5; // Match the clamp boundary (h * 0.5) to avoid teleporting
   const bottomMargin = 120; // Avoid timer/UI area
   
   const spawnX = playAreaMargin + r() * (w - playAreaMargin * 2);
@@ -2322,7 +2687,7 @@ const spawnFirefly = (isPlayerSummoned = false) => {
     floatTimer: r() * TAU,
     flashTimer: r() * TAU,
     roamTarget: null,
-    fadeIn: 1, // Fully visible immediately
+    fadeIn: 0, // Fade in smoothly
     glowIntensity: 1.0 + r() * 0.5,
     size: 2 + r() * 2,
     tier: tier,
@@ -2854,34 +3219,30 @@ const deliverFireflies = (capturedFireflies) => {
   
   playTone(600, 0.3, 0.12); // Delivery success sound
   
-  // Tutorial progression
-  if (!tutorialComplete && tutorialStep === 0) {
-    tutorialDeliveryCount++;
-    if (tutorialDeliveryCount === 1) {
-      firstDeliveryMade = true;
-      showTutorialElements = false; // Hide tutorial elements after first delivery
-      // Stay on step 0 for second delivery
-    } else if (tutorialDeliveryCount >= 2) {
-      tutorialStep = 1; // Move to summoning tutorial after second delivery
-      tutorialStep1Timer = 0; // Reset step 1 timer
-      // Spawn more fireflies for next phase
-      for (let i = 0; i < 8; i++) {
-        spawnFirefly();
+  // Tutorial progression - only specific steps should advance on delivery
+  if (!tutorialComplete) {
+    // Step 0: Deliver twice to learn basic collection
+    if (tutorialStep === 0) {
+      tutorialDeliveryCount++;
+      if (tutorialDeliveryCount === 1) {
+        firstDeliveryMade = true;
+        showTutorialElements = false; // Hide tutorial elements after first delivery
+        // Stay on step 0 for second delivery
+      } else if (tutorialDeliveryCount >= 2) {
+        tutorialStep = 1; // Move to summoning tutorial after second delivery
+        tutorialStep1Timer = 0; // Reset step 1 timer
+        // Spawn more fireflies for next phase
+        for (let i = 0; i < 8; i++) {
+          spawnFirefly();
+        }
       }
     }
-  }
-  
-  // Advance from overheat tutorial step when player delivers fireflies and restores mana
-  if (!tutorialComplete && tutorialStep === 1.5 && manaEnergy > 10) {
-    tutorialStep = 2; // Move to shield tutorial after they learn to restore energy
-    catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
-    catEyeChangeTime = 2000; // Set to 2 seconds for tutorial demonstration
-  }
-  
-  // Advance from drop tutorial step when player delivers fireflies after dropping
-  if (!tutorialComplete && tutorialStep === 3) {
-    tutorialStep = 4; // Move to next tutorial step after they deliver (showing they've read the drop instruction)
-    tutorialStep4Timer = 0; // Reset step 4 timer
+    // Step 3: After learning drops, deliver to move to evolution tutorial
+    else if (tutorialStep === 3) {
+      tutorialStep = 4; // Move to evolution strategy step
+      tutorialStep4Timer = 0; // Reset step 4 timer
+    }
+    // All other steps (1, 1.5, 2, 4, 5, 6) do NOT advance on delivery
   }
 };
 
@@ -2970,13 +3331,11 @@ const updatePlayer = (now) => {
         shieldCooldown = 60; // 1 second
       }
     } else {
-      if (!infiniteMode) {
-        // Drain bioluminescence while shield is active - reduced drain rate
-        manaEnergy = Math.max(0, manaEnergy - 0.1); // Reduced from 0.15 to 0.1
-        
-        // Add heat for sustained shield use (slower than summoning)
-        summonHeat += 0.4; // Reduced from 0.5 for more forgiving gameplay
-      }
+      // Drain bioluminescence while shield is active - reduced drain rate
+      manaEnergy = Math.max(0, manaEnergy - 0.1); // Reduced from 0.15 to 0.1
+      
+      // Add heat for sustained shield use (slower than summoning)
+      summonHeat += 0.4; // Reduced from 0.5 for more forgiving gameplay
     }
   }
   
@@ -3112,10 +3471,10 @@ const drawPlayerCharacter = (playerX, playerY, now) => {
   const glowIntensity = Math.max(0.3, manaPercent) * pulse;
   const glowRadius = 8 + glowIntensity * 6; // 8-14px radius based on mana
   
-  // Blue firefly colors - vibrant when full mana, dull gray when empty, RED during warning flashes
+  // Blue firefly colors - vibrant when full mana, dull gray when empty, RED during 3rd flash only
   let coreColor, glowColor, outerGlow;
-  if (isCurrentlyFlashing()) {
-    // Red warning flash colors
+  if (isCurrentlyFlashing() && warningFlashState.currentFlash === 3) {
+    // Red warning flash colors - only on 3rd flash (critical timing indicator)
     coreColor = `rgba(255, 180, 180, ${glowIntensity})`;
     glowColor = `rgba(255, 120, 120, ${glowIntensity * 0.8})`;
     outerGlow = `rgba(220, 80, 80, ${glowIntensity * 0.4})`;
@@ -3159,43 +3518,75 @@ const drawPlayerCharacter = (playerX, playerY, now) => {
   
   x.shadowBlur = 0;
   
-  // Simple shield bubble when active - color changes based on mana level
+  // Shield bubble when active - depletes visually as mana drains
   if (shieldActive) {
     const shieldPulse = sin(now * 0.01) * 0.2 + 0.8;
     const shieldRadius = glowRadius + 8; // Just outside the firefly glow
     
     // Shield color based on mana level
     let shieldStrokeColor, shieldFillColor, shieldShadowColor;
-    if (manaPercent > 0.2) {
+    if (manaPercent > 0.5) {
       // High mana - blue/cyan
-      shieldStrokeColor = `rgba(102, 204, 255, ${shieldPulse * 0.6})`;
-      shieldFillColor = `rgba(150, 220, 255, ${shieldPulse * 0.1})`;
+      shieldStrokeColor = `rgba(102, 204, 255, ${shieldPulse * 0.8})`;
+      shieldFillColor = `rgba(150, 220, 255, ${shieldPulse * 0.15})`;
       shieldShadowColor = "#66ccff";
-    } else if (manaPercent > 0.05) {
-      // Medium mana (5-20%) - orange warning
-      shieldStrokeColor = `rgba(255, 153, 102, ${shieldPulse * 0.6})`;
-      shieldFillColor = `rgba(255, 200, 150, ${shieldPulse * 0.1})`;
-      shieldShadowColor = "#ff9966";
+    } else if (manaPercent > 0.2) {
+      // Medium mana (20-50%) - yellow warning
+      shieldStrokeColor = `rgba(255, 204, 102, ${shieldPulse * 0.8})`;
+      shieldFillColor = `rgba(255, 220, 150, ${shieldPulse * 0.15})`;
+      shieldShadowColor = "#ffcc66";
     } else {
-      // Critical mana (<5%) - red danger
-      shieldStrokeColor = `rgba(255, 102, 102, ${shieldPulse * 0.6})`;
-      shieldFillColor = `rgba(255, 150, 150, ${shieldPulse * 0.1})`;
+      // Low mana (<20%) - red danger
+      shieldStrokeColor = `rgba(255, 102, 102, ${shieldPulse * 0.8})`;
+      shieldFillColor = `rgba(255, 150, 150, ${shieldPulse * 0.15})`;
       shieldShadowColor = "#ff6666";
     }
     
-    x.shadowColor = shieldShadowColor;
-    x.shadowBlur = 6;
-    setStroke(shieldStrokeColor);
-    setLineWidth(2);
-    x.beginPath();
-    x.arc(playerX, playerY, shieldRadius, 0, TAU);
-    x.stroke();
-    x.shadowBlur = 0;
+    // Draw depleting shield arc (circle that empties as mana drains)
+    const shieldAngle = TAU * manaPercent; // Full circle at 100%, empty at 0%
+    const startAngle = -Math.PI / 2; // Start at top (12 o'clock)
+    const endAngle = startAngle + shieldAngle;
     
+    // Outer glow
+    x.shadowColor = shieldShadowColor;
+    x.shadowBlur = 8;
+    
+    // Stroke the depleting arc
+    setStroke(shieldStrokeColor);
+    setLineWidth(3);
+    x.beginPath();
+    x.arc(playerX, playerY, shieldRadius, startAngle, endAngle);
+    x.stroke();
+    
+    // Fill the depleting arc segment
+    x.shadowBlur = 0;
     setFill(shieldFillColor);
     x.beginPath();
-    x.arc(playerX, playerY, shieldRadius, 0, TAU);
+    x.moveTo(playerX, playerY);
+    x.arc(playerX, playerY, shieldRadius, startAngle, endAngle);
+    x.closePath();
     x.fill();
+    
+    // Add tick marks for visual feedback (every 25%)
+    x.shadowBlur = 0;
+    for (let i = 0; i <= 4; i++) {
+      const tickAngle = startAngle + (TAU * i / 4);
+      const tickStart = shieldRadius - 2;
+      const tickEnd = shieldRadius + 2;
+      const tickX1 = playerX + cos(tickAngle) * tickStart;
+      const tickY1 = playerY + sin(tickAngle) * tickStart;
+      const tickX2 = playerX + cos(tickAngle) * tickEnd;
+      const tickY2 = playerY + sin(tickAngle) * tickEnd;
+      
+      setStroke(`rgba(255, 255, 255, ${shieldPulse * 0.4})`);
+      setLineWidth(1);
+      x.beginPath();
+      x.moveTo(tickX1, tickY1);
+      x.lineTo(tickX2, tickY2);
+      x.stroke();
+    }
+    
+    x.shadowBlur = 0;
   }
 
 
@@ -3313,6 +3704,211 @@ const drawParticles = () => {
     x.arc(sparkle.x, sparkle.y, size, 0, TAU);
     x.fill();
   });
+};
+
+// Draw cat-like claw marks attack visual feedback (single or double swipe based on shield quality)
+const drawClawMarks = () => {
+  if (!clawMarksActive || clawMarksTimer <= 0) return;
+  
+  const progress = 1 - (clawMarksTimer / CLAW_MARKS_DURATION);
+  const alpha = Math.max(0, 1 - progress); // Fade out over time
+  
+  x.save();
+  x.globalAlpha = alpha * 0.8;
+  
+  // Shadow for depth
+  x.shadowColor = 'rgba(0, 0, 0, 0.6)';
+  x.shadowBlur = 8;
+  x.shadowOffsetX = 2;
+  x.shadowOffsetY = 2;
+  
+  setStroke('#dd3333');
+  setLineWidth(6);
+  x.lineCap = 'round';
+  
+  const centerX = w * 0.5;
+  const centerY = h * 0.5;
+  const clawLength = Math.min(w, h) * 0.6;
+  
+  // First swipe: top-left to bottom-right (4 claws) - always show
+  const angle1 = Math.PI / 4; // 45 degrees
+  const spacing1 = 25;
+  const swipe1Delay = 15; // Slight delay for first swipe
+  const swipe1Alpha = clawMarksTimer > swipe1Delay ? alpha : alpha * 0.3;
+  
+  x.globalAlpha = swipe1Alpha * 0.8;
+  for (let i = 0; i < 4; i++) {
+    const offset = (i - 1.5) * spacing1;
+    const offsetX = offset * Math.cos(angle1 + Math.PI/2);
+    const offsetY = offset * Math.sin(angle1 + Math.PI/2);
+    
+    const startX = centerX + offsetX - Math.cos(angle1) * clawLength * 0.4;
+    const startY = centerY + offsetY - Math.sin(angle1) * clawLength * 0.4;
+    const endX = centerX + offsetX + Math.cos(angle1) * clawLength * 0.4;
+    const endY = centerY + offsetY + Math.sin(angle1) * clawLength * 0.4;
+    
+    x.beginPath();
+    x.moveTo(startX, startY);
+    x.lineTo(endX, endY);
+    x.stroke();
+  }
+  
+  // Second swipe: bottom-left to top-right (4 claws) - only for double strikes
+  if (clawMarksType === 'double') {
+    const angle2 = -Math.PI / 4; // -45 degrees
+    const spacing2 = 25;
+    const swipe2Delay = 30; // Later delay for second swipe
+    
+    if (clawMarksTimer < CLAW_MARKS_DURATION - swipe2Delay) {
+      const swipe2Alpha = alpha * 0.9;
+      x.globalAlpha = swipe2Alpha;
+      
+      for (let i = 0; i < 4; i++) {
+        const offset = (i - 1.5) * spacing2;
+        const offsetX = offset * Math.cos(angle2 + Math.PI/2);
+        const offsetY = offset * Math.sin(angle2 + Math.PI/2);
+        
+        const startX = centerX + offsetX - Math.cos(angle2) * clawLength * 0.4;
+        const startY = centerY + offsetY - Math.sin(angle2) * clawLength * 0.4;
+        const endX = centerX + offsetX + Math.cos(angle2) * clawLength * 0.4;
+        const endY = centerY + offsetY + Math.sin(angle2) * clawLength * 0.4;
+        
+        x.beginPath();
+        x.moveTo(startX, startY);
+        x.lineTo(endX, endY);
+        x.stroke();
+      }
+    }
+  }
+  
+  x.restore();
+  
+  // Update timer
+  clawMarksTimer--;
+  if (clawMarksTimer <= 0) {
+    clawMarksActive = false;
+  }
+};
+
+// Draw rainbow glitter effect for perfect shields
+const drawRainbowGlitter = () => {
+  if (!rainbowGlitterActive || rainbowGlitterTimer <= 0) return;
+  
+  const progress = 1 - (rainbowGlitterTimer / RAINBOW_GLITTER_DURATION);
+  
+  // Make all fireflies sparkle with rainbow colors
+  otherFireflies.forEach(firefly => {
+    if (!firefly.captured) return;
+    
+    // Create sparkles around each firefly
+    for (let i = 0; i < 3; i++) {
+      const angle = (progress * Math.PI * 4) + (i * Math.PI * 2 / 3);
+      const radius = 15 + Math.sin(progress * Math.PI * 6) * 5;
+      const sparkleX = firefly.x + Math.cos(angle) * radius;
+      const sparkleY = firefly.y + Math.sin(angle) * radius;
+      
+      // Rainbow color cycling
+      const hue = (progress * 360 + i * 120) % 360;
+      const alpha = (1 - progress) * 0.8;
+      
+      x.save();
+      x.globalAlpha = alpha;
+      x.shadowColor = `hsl(${hue}, 80%, 60%)`;
+      x.shadowBlur = 8;
+      setFill(`hsl(${hue}, 80%, 70%)`);
+      
+      x.beginPath();
+      x.arc(sparkleX, sparkleY, 2 + Math.sin(progress * Math.PI * 8) * 1, 0, TAU);
+      x.fill();
+      x.restore();
+    }
+  });
+  
+  // Update timer
+  rainbowGlitterTimer--;
+  if (rainbowGlitterTimer <= 0) {
+    rainbowGlitterActive = false;
+  }
+};
+
+// Draw shield outline effect for successful shields
+const drawShieldOutline = () => {
+  if (!shieldOutlineActive || shieldOutlineTimer <= 0) return;
+  
+  const progress = shieldOutlineTimer / SHIELD_OUTLINE_DURATION;
+  const alpha = Math.max(0, progress * 0.9); // Stronger alpha for visibility
+  
+  x.save();
+  x.globalAlpha = alpha;
+  
+  const { x: playerX, y: playerY } = getPlayerPosition();
+  const baseRadius = 80; // Much larger, similar to claw marks
+  
+  // Gentle pulsing effect
+  const pulse = Math.sin(shieldOutlineTimer * 0.2) * 5;
+  const radius = baseRadius + pulse;
+  
+  // Color based on quality - blue shimmery theme
+  let strokeColor, glowColor, innerGlow;
+  if (shieldOutlineQuality === 'PERFECT') {
+    strokeColor = '#88ddff';
+    glowColor = '#88ddff';
+    innerGlow = 'rgba(136, 221, 255, 0.2)';
+  } else if (shieldOutlineQuality === 'GREAT') {
+    strokeColor = '#66ccff';
+    glowColor = '#66ccff';
+    innerGlow = 'rgba(102, 204, 255, 0.15)';
+  } else { // GOOD
+    strokeColor = '#99ccff';
+    glowColor = '#99ccff';
+    innerGlow = 'rgba(153, 204, 255, 0.1)';
+  }
+  
+  // Draw inner glow circle (filled)
+  setFill(innerGlow);
+  x.beginPath();
+  x.arc(playerX, playerY, radius - 5, 0, TAU);
+  x.fill();
+  
+  // Draw main glowing shield circle outline
+  x.shadowColor = glowColor;
+  x.shadowBlur = 25;
+  setStroke(strokeColor);
+  setLineWidth(4);
+  
+  x.beginPath();
+  x.arc(playerX, playerY, radius, 0, TAU);
+  x.stroke();
+  
+  // Draw second outer ring for extra shimmer
+  x.shadowBlur = 15;
+  setLineWidth(2);
+  x.beginPath();
+  x.arc(playerX, playerY, radius + 8, 0, TAU);
+  x.stroke();
+  
+  // Add sparkle particles around the shield
+  const sparkleCount = shieldOutlineQuality === 'PERFECT' ? 12 : 8;
+  for (let i = 0; i < sparkleCount; i++) {
+    const angle = (i / sparkleCount) * TAU + (shieldOutlineTimer * 0.08);
+    const sparkleDistance = radius + 5 + Math.sin(shieldOutlineTimer * 0.15 + i) * 8;
+    const sparkleX = playerX + Math.cos(angle) * sparkleDistance;
+    const sparkleY = playerY + Math.sin(angle) * sparkleDistance;
+    
+    x.shadowBlur = 10;
+    setFill(strokeColor);
+    x.beginPath();
+    x.arc(sparkleX, sparkleY, 2.5, 0, TAU);
+    x.fill();
+  }
+  
+  x.restore();
+  
+  // Update timer
+  shieldOutlineTimer--;
+  if (shieldOutlineTimer <= 0) {
+    shieldOutlineActive = false;
+  }
 };
 
 // Create dispersal effect when fireflies are lost
@@ -3524,28 +4120,6 @@ const handleMouseDown = (e) => {
   
   if (showHelp) {
     // Check if clicking on mode toggle button in help menu
-    if (window.helpModeToggle) {
-      const btn = window.helpModeToggle;
-      if (mx >= btn.x - btn.width/2 && mx <= btn.x + btn.width/2 &&
-          my >= btn.y - btn.height/2 && my <= btn.y + btn.height/2) {
-        
-        // Toggle infinite mode
-        infiniteMode = !infiniteMode;
-        
-        // Show confirmation message
-        const modeText = infiniteMode ? "Infinite Mode Enabled" : "Normal Mode Enabled";
-        addScoreText(modeText, w / 2, h / 2 - 100, infiniteMode ? '#ffaa00' : '#69e4de', 400);
-        addScoreText("Game Restarted", w / 2, h / 2 - 70, '#ffffff', 400);
-        
-        // Restart the game to reset everything
-        restartGame();
-        
-        // Close help menu after mode toggle so game can start running
-        showHelp = false;
-        return;
-      }
-    }
-    
     // Don't close help menu on clicks - only ESC closes it
     return;
   }
@@ -3791,6 +4365,13 @@ const handleKeyDown = (e) => {
   if (showHelp) {
     e.preventDefault();
     
+    // Tutorial reset with 'T' key
+    if (e.code === "KeyT") {
+      localStorage.removeItem('tutorialComplete');
+      location.reload(); // Reload page to reset tutorial
+      return;
+    }
+    
     // Improved scroll controls when help is open
     if (e.code === "ArrowUp" || e.code === "KeyW") {
       const scrollSpeed = e.shiftKey ? 75 : 35; // Faster with shift
@@ -3970,8 +4551,8 @@ const handleWheel = (e) => {
 };
 
 // Utility functions for input handling
-const canSummon = () => infiniteMode || manaEnergy >= 5;
-const canShield = () => infiniteMode || (manaEnergy >= 1 && shieldCooldown === 0 && !summonOverheated);
+const canSummon = () => manaEnergy >= 5;
+const canShield = () => manaEnergy >= 1 && shieldCooldown === 0 && !summonOverheated;
 
 const summonFirefly = () => {
   if (!canSummon()) {
@@ -3986,18 +4567,16 @@ const summonFirefly = () => {
   }
   
   // Fixed mana cost: 5 mana per firefly (20 fireflies from full 100 mana)
-  if (!infiniteMode) {
-    if (manaEnergy < 5) {
-      // Not enough mana to summon
-      addScoreText("NOT ENOUGH MANA!", mx, my - 30, "#ff4444", 180);
-      playTone(200, 0.2, 0.2, 'triangle');
-      return;
-    }
-    manaEnergy = Math.max(0, manaEnergy - 5);
+  if (manaEnergy < 5) {
+    // Not enough mana to summon
+    addScoreText("NOT ENOUGH MANA!", mx, my - 30, "#ff4444", 180);
+    playTone(200, 0.2, 0.2, 'triangle');
+    return;
   }
+  manaEnergy = Math.max(0, manaEnergy - 5);
   
-  // Only overheat when mana hits 0 (not in infinite mode)
-  if (!infiniteMode && manaEnergy === 0 && !summonOverheated) {
+  // Only overheat when mana hits 0
+  if (manaEnergy === 0 && !summonOverheated) {
     summonOverheated = true;
     overheatStunned = true;
     overheatCooldown = 180; // 3 seconds of cooldown (60fps * 3)
@@ -4082,14 +4661,19 @@ const dropFireflies = () => {
 };
 
 const activateShield = (isHoldAction = false) => {
-  if (!infiniteMode && manaEnergy < 1) {
+  if (manaEnergy < 1) {
+    // Track that player attempted shield during warning period but had no mana
+    const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+    if (timeUntilChange <= CFG.warnFrames && timeUntilChange >= 0) {
+      shieldAttemptedNoMana = true;
+    }
+    
     // Play low-mana shield failure sound - use exact same sound as summoning failure
-
     playTone(200, 0.2, 0.2, 'triangle');
     return;
   }
   
-  if (!infiniteMode && summonOverheated) {
+  if (summonOverheated) {
     lastOverheatAttempt = Date.now();
     // Play overheated shield failure sound
 
@@ -4097,21 +4681,39 @@ const activateShield = (isHoldAction = false) => {
     return;
   }
   
-  // Consume mana when shield is activated (only in normal mode)
-  if (!infiniteMode) {
-    manaEnergy = Math.max(0, manaEnergy - 1);
-  }
+  // Consume mana when shield is activated
+  manaEnergy = Math.max(0, manaEnergy - 1);
   
   shieldActive = true;
   lastShieldTime = Date.now();
   
+  // Track when shield was first activated during warning period
+  if (shieldActivationPhase === -1) { // Only set on first activation
+    const timeUntilChange = nextColorChangeTime - catEyeChangeTimer;
+    if (timeUntilChange <= CFG.warnFrames && timeUntilChange >= 0) {
+      const flashPhase = CFG.warnFrames - timeUntilChange;
+      if (flashPhase >= CFG.flash1 && flashPhase <= CFG.flash1 + 20) {
+        shieldActivationPhase = 1; // Perfect timing - 1st flash
+      } else if (flashPhase >= CFG.flash2 && flashPhase <= CFG.flash2 + 20) {
+        shieldActivationPhase = 2; // Great timing - 2nd flash
+      } else if (flashPhase >= CFG.flash3 && flashPhase <= CFG.flash3 + 20) {
+        shieldActivationPhase = 3; // Perfect timing - 3rd flash
+      } else {
+        shieldActivationPhase = 0; // Good timing - activated during warning period but not in a flash
+      }
+    } else {
+      shieldActivationPhase = -2; // Activated before warning period (will still work as GOOD if held)
+    }
+  }
 
   // Play appropriate sound based on action type
   handleShieldAudio(isHoldAction);
   
-  // Tutorial progression
-  if (!tutorialComplete && tutorialStep === 0) {
-    tutorialStep = 1;
+  // Tutorial progression - advance when player first uses shield
+  if (!tutorialComplete && tutorialStep === 1.5) {
+    tutorialStep = 2; // Move to shield timing tutorial after first shield activation
+    catEyeChangeTimer = 0; // Reset timer so player gets full cycle to learn
+    nextColorChangeTime = 360; // 6 seconds for tutorial demonstration
   }
 };
 
@@ -4167,6 +4769,19 @@ const restartGame = () => {
   stopShieldShimmer(); // Stop any shield sounds
   shieldCooldown = 0;
   lastShieldTime = 0;
+  shieldActivationPhase = -1;
+  shieldAttemptedNoMana = false;
+  
+  // Reset visual feedback effects
+  clawMarksActive = false;
+  clawMarksTimer = 0;
+  clawMarksType = 'double';
+  rainbowGlitterActive = false;
+  rainbowGlitterTimer = 0;
+  shieldOutlineActive = false;
+  shieldOutlineTimer = 0;
+  catAngryActive = false;
+  catAngryTimer = 0;
   
   // Reset and restart music
   if (audioEnabled && pageVisible) {
@@ -4225,134 +4840,158 @@ const drawTutorialGuidance = () => {
   // Ensure consistent font state - fix canvas pollution issue
   setFontBySize(16, 'body'); // Default tutorial font
   
-  switch (tutorialStep) {
-    case 0:
-      // First step: Basic firefly collection - clean and simple
-      setFill(`rgba(255, 255, 255, ${pulse})`);
-      setFontBySize(18, 'body');
-      x.fillText("Collect fireflies and deliver them to Nyx Felis", w / 2, h - 160);
-      x.fillText("before the curiosity meter runs out", w / 2, h - 140);
-      
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
-      setFontBySize(16, 'body');
-      x.fillText("Move your mouse to attract fireflies", w / 2, h - 115);
-      
-      // Show delivery zone ring around cat's mouth area
-      const catX = w / 2;
-      const catY = h * 0.2;
-      const ringPulse = sin(tutorialTimer * 2) * 0.3 + 0.7;
-      setStroke(`rgba(255, 215, 0, ${ringPulse * 0.8})`); // Gold highlight
-      setLineWidth(3);
-      x.setLineDash([8, 8]);
-      x.beginPath();
-      x.arc(catX, catY + 50, 80, 0, TAU); // Around cat's mouth/nose area
-      x.stroke();
-      x.setLineDash([]);
-      break;
-      
-    case 1:
-      // Summoning instruction
-      setFill(`rgba(255, 255, 255, ${pulse})`);
-      setFontBySize(18, 'body');
-      x.fillText("Great! You can also summon more fireflies", w / 2, h - 165);
-      x.fillText("But be careful - summoning costs mana", w / 2, h - 145);
-      
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for action
-      setFontBySize(16, 'body');
-      x.fillText("TAP or CLICK to summon fireflies", w / 2, h - 120);
-      break;
-      
-    case 1.5:
-      // Mana management explanation
-      setFill(`rgba(255, 255, 255, ${pulse})`);
-      setFontBySize(18, 'body');
-      x.fillText("Watch your mana! Summoning costs 5 mana each", w / 2, h - 165);
-      x.fillText("Deliver fireflies to Nyx to restore 5 mana each", w / 2, h - 145);
-      
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for action
-      setFontBySize(16, 'body');
-      x.fillText("Shields cost 1 mana - manage wisely!", w / 2, h - 120);
-      break;
-      
-    case 2:
-      // Shield mechanics - watch the eyes
-      setFill(`rgba(255, 215, 0, ${pulse})`); // Gold for importance
-      setFontBySize(20, 'body');
-      x.fillText("Watch Nyx's eyes for flashes!", w / 2, h - 160);
-      
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for input
-      setFontBySize(18, 'body');
-      x.fillText("Hold SPACE or MOUSE during eye flashes", w / 2, h - 135);
-      
-      if (tutorialMissedShield) {
-        setFill(`rgba(255, 100, 100, ${pulse})`); // Red for emphasis
-        setFontBySize(16, 'body');
-        x.fillText("Try again - watch for the eye flashes!", w / 2, h - 110);
+  // Tutorial step configuration - data-driven structure
+  const tutorialSteps = {
+    0: {
+      // Basic collection - simple and clear
+      messages: [
+        { text: "Collect fireflies and deliver them to Nyx Felis", color: [255, 255, 255], size: 18, y: -220 },
+        { text: "Move your mouse to attract them", color: [255, 255, 255], size: 18, y: -200 },
+        { text: "Deliver 2 times to continue", color: [100, 255, 100], size: 16, y: -175 }
+      ],
+      highlight: {
+        type: 'circle',
+        x: w / 2,
+        y: h * 0.2 + 50,
+        radius: 80,
+        color: [255, 215, 0],
+        pulseSpeed: 2,
+        pulseAlpha: 0.8,
+        lineWidth: 3,
+        dash: [8, 8]
       }
-      break;
+    },
+    1: {
+      // Summoning - introduce tap/click mechanic
+      messages: [
+        { text: "You can summon more fireflies!", color: [255, 255, 255], size: 18, y: -225 },
+        { text: "But summoning costs mana", color: [255, 255, 255], size: 18, y: -205 },
+        { text: "Tap SPACEBAR or left-click to summon", color: [100, 255, 100], size: 16, y: -180 }
+      ]
+    },
+    1.5: {
+      // Shield activation - critical mechanic
+      messages: [
+        { text: "Nyx will attack your fireflies!", color: [255, 215, 0], size: 20, y: -235 },
+        { text: "Protect them with your shield", color: [255, 255, 255], size: 18, y: -210 },
+        { text: "HOLD SPACEBAR or hold left-click", color: [100, 255, 100], size: 16, y: -180 }
+      ]
+    },
+    2: {
+      // Shield timing - teach the 3-flash system
+      messages: [
+        { text: "Watch for 3 warning flashes!", color: [255, 215, 0], size: 20, y: -235 },
+        { text: "Any shield (with mana) = NO claw marks!", color: [255, 255, 255], size: 16, y: -205 },
+        { text: "Attack comes AFTER 3rd flash", color: [255, 255, 255], size: 16, y: -185 },
+        { text: "Better timing = better evolution rewards!", color: [100, 255, 100], size: 16, y: -155 }
+      ],
+      conditionalMessage: tutorialMissedShield ? {
+        text: "Try again - hold shield when the flashes happen!",
+        color: [255, 100, 100],
+        size: 15,
+        y: -130
+      } : null
+    },
+    3: {
+      // Drop mechanic - strategic gameplay
+      messages: [
+        { text: "Great! Your fireflies evolved!", color: [255, 255, 255], size: 18, y: -235 },
+        { text: "You can drop fireflies to keep them safe", color: [255, 255, 255], size: 18, y: -215 },
+        { text: "Right-click or press X to drop", color: [100, 255, 100], size: 16, y: -185 },
+        { text: "(can drop anywhere - collect them later)", color: [200, 200, 200], size: 14, y: -165, alphaMult: 0.8 }
+      ],
+      highlight: {
+        type: 'circle',
+        x: w * 0.15,
+        y: h * 0.85,
+        radius: 50,
+        color: [255, 165, 0],
+        pulseSpeed: 2,
+        pulseAlpha: 0.6,
+        lineWidth: 2,
+        dash: [6, 6],
+        label: { text: "Example Safe-Zone", yOffset: 70 }
+      }
+    },
+    4: {
+      // Evolution chains - advanced strategy
+      messages: [
+        { text: "Fireflies evolve when you shield perfectly!", color: [255, 255, 255], size: 18, y: -225 },
+        { text: "Green → Purple → Gold → Rainbow", color: [255, 255, 255], size: 18, y: -205 },
+        { text: "Rainbow fireflies are worth 8x more!", color: [100, 255, 100], size: 16, y: -175 }
+      ]
+    },
+    5: {
+      // Curiosity meter - the core timer mechanic
+      messages: [
+        { text: "This is the Curiosity Timer!", color: [150, 100, 255], size: 20, y: -255 },
+        { text: "The green bar shows how curious Nyx is", color: [255, 255, 255], size: 16, y: -225 },
+        { text: "Deliver fireflies BEFORE it empties", color: [255, 255, 255], size: 16, y: -205 },
+        { text: "or Nyx loses interest and you lose!", color: [255, 255, 255], size: 16, y: -185 }
+      ]
+    },
+    6: {
+      // Tutorial complete
+      messages: [
+        { text: "Tutorial Complete!", color: [100, 255, 100], size: 22, y: -220 },
+        { text: "Survive the night for 3 minutes to win!", color: [255, 255, 255], size: 16, y: -190, alphaMult: 0.9 },
+        { text: "Good luck!", color: [255, 255, 255], size: 16, y: -170, alphaMult: 0.9 }
+      ]
+    }
+  };
+  
+  const currentStep = tutorialSteps[tutorialStep];
+  
+  if (currentStep) {
+    // Render messages
+    currentStep.messages.forEach(msg => {
+      const alpha = (msg.alphaMult || 1) * pulse;
+      setFill(`rgba(${msg.color[0]}, ${msg.color[1]}, ${msg.color[2]}, ${alpha})`);
+      setFontBySize(msg.size, 'body');
       
-    case 3:
-      // Evolution success - explain evolved fireflies and dropping
-      setFill(`rgba(255, 255, 255, ${pulse})`);
-      setFontBySize(18, 'body');
-      x.fillText("Great! Your fireflies evolved and are worth more", w / 2, h - 180);
-      x.fillText("Use RIGHT-CLICK or X to drop them here:", w / 2, h - 160);
+      if (msg.align) {
+        x.textAlign = msg.align;
+        x.fillText(msg.text, msg.x || w / 2, (msg.y > 0 ? msg.y : h + msg.y));
+        x.textAlign = "center";
+      } else {
+        x.fillText(msg.text, msg.x || w / 2, (msg.y > 0 ? msg.y : h + msg.y));
+      }
+    });
+    
+    // Render conditional message if present
+    if (currentStep.conditionalMessage) {
+      const msg = currentStep.conditionalMessage;
+      setFill(`rgba(${msg.color[0]}, ${msg.color[1]}, ${msg.color[2]}, ${pulse})`);
+      setFontBySize(msg.size, 'body');
+      x.fillText(msg.text, w / 2, h + msg.y);
+    }
+    
+    // Render highlight if present
+    if (currentStep.highlight) {
+      const h = currentStep.highlight;
+      const highlightPulse = sin(tutorialTimer * h.pulseSpeed) * 0.3 + 0.7;
+      const alpha = highlightPulse * h.pulseAlpha;
       
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for action
-      setFontBySize(16, 'body');
-      x.fillText("Dropping gives you time to keep Nyx satisfied!", w / 2, h - 135);
+      setStroke(`rgba(${h.color[0]}, ${h.color[1]}, ${h.color[2]}, ${alpha})`);
+      setLineWidth(h.lineWidth);
+      x.setLineDash(h.dash);
       
-      // Highlight drop zone in bottom left
-      const dropZoneX = w * 0.15;
-      const dropZoneY = h * 0.85;
-      const ringPulse3 = sin(tutorialTimer * 2) * 0.3 + 0.7;
-      setStroke(`rgba(255, 165, 0, ${ringPulse3 * 0.8})`); // Orange highlight
-      setLineWidth(3);
-      x.setLineDash([6, 6]);
       x.beginPath();
-      x.arc(dropZoneX, dropZoneY, 60, 0, TAU);
+      if (h.type === 'circle') {
+        x.arc(h.x, h.y, h.radius, 0, TAU);
+      } else if (h.type === 'rect') {
+        x.strokeRect(h.x, h.y, h.width, h.height);
+      }
       x.stroke();
       x.setLineDash([]);
       
-      setFill(`rgba(255, 165, 0, ${pulse})`);
-      x.font = `14px ${FONTS.body}`;
-      x.fillText("Drop Zone", dropZoneX, dropZoneY + 80);
-      break;
-      
-    case 4:
-      // Drop mechanics and evolution strategy
-      setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = `18px ${FONTS.body}`;
-      x.fillText("Use RIGHT-CLICK or X to drop fireflies", w / 2, h - 165);
-      x.fillText("Drop evolved fireflies and collect them later to evolve further", w / 2, h - 145);
-      
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for action
-      x.font = `16px ${FONTS.body}`;
-      x.fillText("Try dropping evolved fireflies for more points!", w / 2, h - 120);
-      break;
-      
-    case 5:
-      // Curiosity meter explanation
-      setFill(`rgba(150, 100, 255, ${pulse})`); // Purple for curiosity
-      x.font = `20px ${FONTS.body}`;
-      x.fillText("The Curiosity Meter", w / 2, h - 180);
-      
-      setFill(`rgba(255, 255, 255, ${pulse})`);
-      x.font = `16px ${FONTS.body}`;
-      x.fillText("Watch the purple bar at the top", w / 2, h - 155);
-      x.fillText("It drops when you don't collect fireflies", w / 2, h - 135);
-      
-      setFill(`rgba(255, 100, 100, ${pulse})`); // Red for warning
-      x.font = `15px ${FONTS.body}`;
-      x.fillText("If curiosity hits zero, you lose your streak!", w / 2, h - 110);
-      break;
-      
-    case 6:
-      // Tutorial completion
-      setFill(`rgba(100, 255, 100, ${pulse})`); // Green for completion
-      x.font = `22px ${FONTS.body}`;
-      x.fillText("Tutorial Complete, Good luck!", w / 2, h - 140);
-      break;
+      // Render label if present
+      if (h.label) {
+        setFill(`rgba(${h.color[0]}, ${h.color[1]}, ${h.color[2]}, ${pulse * 0.7})`);
+        setFontBySize(12, 'body');
+        x.fillText(h.label.text, h.x, h.y + h.label.yOffset);
+      }
+    }
   }
   
   x.restore();
@@ -4480,126 +5119,74 @@ const drawHelp = () => {
   const contentStartY = h * 0.08 + 80; // Start below title
   const lineHeight = LINE_HEIGHT;
   
-  // Structured content with proper spacing and organization
+  // Structured content with consistent spacing
   const sections = [
     {
-      type: 'header',
-      text: 'CONTROLS'
-    },
-    {
-      type: 'content',
-      lines: [
-        '• Move mouse to guide Lampyris and collect fireflies',
-        '• Click rapidly to summon fireflies (costs bioluminescence/mana)', 
-        '• Hold mouse to activate protective shield (costs bioluminescence/mana)',
-        '• Right-click or X key to drop fireflies (strategic for evolved fireflies)',
-        `• ESC for help  •  M to toggle audio: ${audioEnabled ? 'ON' : 'OFF'}`
-      ]
-    },
-
-    {
-      type: 'section-break'
-    },
-    {
-      type: 'header', 
-      text: 'OBJECTIVE'
-    },
-    {
-      type: 'content',
-      lines: [
-        '• Collect fireflies and deliver them to Nyx Felis in the Sky',
-        '• Firefly Evolution System:',
-        '  - Green (5 points) → Purple (15 points)',
-        '  - Gold (25 points) → Rainbow (40 points)',
-        '• Shield fireflies during color changes to evolve them to higher tiers',
-        '• Watch delivery pressure timer - Green→Yellow→Red shows deadline urgency',
-        '• Deliver before timer reaches red (15s deadline) or curiosity drops',
-        '• Survive until dawn (3 minutes) while building delivery streaks for score multipliers (up to 300%)'
+      type: 'section',
+      title: 'CONTROLS',
+      items: [
+        '- Move mouse → collect fireflies', 
+        '- [Click] rapidly → summon fireflies (costs mana)',
+        '- [Hold Space/Click] → activate shield (costs mana)',
+        '- [Right-Click] or [X] → drop fireflies',
+        '- [ESC] [M] [L] [T] = help, audio, leaderboard, tutorial'
       ]
     },
     {
-      type: 'section-break'
-    },
-    {
-      type: 'header',
-      text: 'SHIELD SYSTEM'
-    },
-    {
-      type: 'content', 
-      lines: [
-        '• When Nyx\'s eyes begin to shift colors, be ready to shield',
-        '• PERFECT timing (white flash) protects AND evolves ALL fireflies',
-        '• Good timing (yellow/green) saves most captured fireflies',
-        '• Poor timing: some fireflies may escape (but won\'t evolve)',
-        '• Higher tier fireflies move faster - risk vs reward!',
-        '• Master timing to prevent curiosity from reaching -50 (game over)'
+      type: 'section',
+      title: 'HOW TO WIN',
+      subtitle: '⟡ Survive 3 minutes until dawn breaks',
+      items: [
+        '- Summon and collect fireflies',
+        '- Deliver to Nyx before timer empties (15 seconds)',
+        '- Use shields to block attacks',
+        '- Build combos and evolve for max points'
       ]
     },
     {
-      type: 'section-break'
-    },
-    {
-      type: 'header',
-      text: 'STRATEGY TIPS'
-    },
-    {
-      type: 'content',
-      lines: [
-        '• Manage bioluminescence (mana) wisely - summoning and shields cost energy',
-        '• Game overheats when mana reaches zero - click rapidly to recover',
-        '• Risk vs reward: collect more fireflies vs deliver safely before deadline',
-        '• Master perfect shield timing for protection and firefly evolution',
-        '• Keep moving! Idle too long and fireflies will disperse',
-        '• Protect your delivery streak - losing fireflies breaks streaks',
-        '• Watch both pressure timer AND Nyx\'s eyes - timing is everything!',
-        '• Build rainbow collections - rainbow fireflies worth 8x green ones'
+      type: 'section',
+      title: 'SHIELDS',
+      subtitle: '⟡ Nyx attacks when her eyes flash 3 times',
+      items: [
+        '- Hold shield → blocks attack (no claw marks)',
+        '- Better timing → bonus evolution rewards:',
+        '    3rd flash = PERFECT (all evolve)',
+        '    2nd flash = GREAT (75% evolve)',
+        '    1st flash = GOOD (50% evolve)',
+        '- No shield or no mana → fireflies flee'
       ]
     },
     {
-      type: 'section-break'
-    },
-    {
-      type: 'header',
-      text: 'GAME MODE'
-    },
-    {
-      type: 'mode-indicator'
-    },
-    {
-      type: 'section-break'
-    },
-    {
-      type: 'toggle-switch'
-    },
-    {
-      type: 'section-break'
-    },
-    {
-      type: 'content',
-      lines: [
-        '• Click to switch modes (the game will restart)',
-        '• Normal Mode: Standard gameplay with mana management and time pressure',
-        '• Infinite Mode: Unlimited mana, no time pressure, endless gameplay',
-        '• Infinite Mode: Perfect for casual play, learning mechanics, and firefly evolution mastery',
-        '• Toggle safely resets game to prevent mid-game confusion'
+      type: 'section',
+      title: 'EVOLUTION & COMBOS',
+      subtitle: '⟡ Shield with good timing to evolve fireflies',
+      items: [
+        '- Evolution chain increases firefly value:',
+        '    Green (5pts) → Purple (15pts)',
+        '    Purple (15pts) → Gold (25pts)',
+        '    Gold (25pts) → Rainbow (40pts)',
+        '- Drop evolved fireflies, recollect, then shield again',
+        '    to re-evolve for rainbow tier',
+        '- Delivery streaks multiply score up to 3x',
+        '    (losing fireflies breaks your streak)'
       ]
     }
   ];
   
-  // Convert sections to flat rules array for rendering
+  // Convert sections to flat rendering array with consistent spacing
   const rules = [];
-  sections.forEach(section => {
-    if (section.type === 'header') {
-      rules.push(section.text);
-    } else if (section.type === 'content') {
-      section.lines.forEach(line => rules.push(line));
-    } else if (section.type === 'section-break') {
-      rules.push(''); // Add spacing
-    } else if (section.type === 'mode-indicator') {
-      rules.push('__MODE_INDICATOR__'); // Special marker
-    } else if (section.type === 'toggle-switch') {
-      rules.push('__TOGGLE_SWITCH__'); // Special marker
+  sections.forEach((section, idx) => {
+    if (idx > 0) rules.push('__SECTION_BREAK__'); // Space between sections
+    
+    rules.push({ type: 'header', text: section.title });
+    
+    if (section.subtitle) {
+      rules.push({ type: 'subtitle', text: section.subtitle });
     }
+    
+    section.items.forEach(item => {
+      rules.push({ type: 'item', text: item });
+    });
   });
   
   // Create clipping region for scrollable content
@@ -4610,123 +5197,105 @@ const drawHelp = () => {
   x.rect(0, contentTop - 20, w, contentHeight + 20);
   x.clip();
   
+  // Align content block with the centered title above
+  // Measure the actual content width and center that
+  // Find the longest line to determine natural content width
+  let maxLineWidth = 0;
+  x.save();
+  rules.forEach(rule => {
+    if (rule === '__SECTION_BREAK__') return;
+    if (typeof rule === 'object') {
+      if (rule.type === 'header') {
+        x.font = `bold 20px ${FONTS.body}`;
+      } else if (rule.type === 'subtitle') {
+        x.font = `bold 16px ${FONTS.body}`;
+      } else {
+        x.font = `16px ${FONTS.body}`;
+      }
+      const lineWidth = x.measureText(rule.text).width;
+      maxLineWidth = Math.max(maxLineWidth, lineWidth);
+    }
+  });
+  x.restore();
+  
+  // Add some padding to the natural width
+  const contentWidth = maxLineWidth + 60;
+  const leftMargin = (w - contentWidth) / 2;
+  
   rules.forEach((rule, i) => {
     const y = contentTop + i * lineHeight - helpScrollOffset;
     
     // Only render lines that are visible
     if (y > contentTop - 40 && y < contentTop + contentHeight + 40) {
-      x.textAlign = "center";
       
-      // Section headers - clean typography without background
-      if (rule === "CONTROLS" || rule === "INFINITE MODE" || rule === "OBJECTIVE" || 
-          rule === "SHIELD SYSTEM" || rule === "STRATEGY TIPS" || rule === "GAME MODE") {
-        
-        // Header text with clean styling
-        setFill("#e8b89a");
-        x.shadowColor = "rgba(232, 184, 154, 0.3)";
-        x.shadowBlur = 3;
-        x.font = `bold 20px ${FONTS.body}`;
-        x.fillText(rule, w / 2, y);
-        x.shadowBlur = 0;
-        
-      } else if (rule === "__MODE_INDICATOR__") {
-        // Current mode indicator
-        setFill(infiniteMode ? "#ffaa00" : "#69e4de");
-        x.font = `16px ${FONTS.body}`;
-        x.shadowColor = "rgba(0,0,0,0.8)";
-        x.shadowBlur = 4;
-        const currentModeText = infiniteMode ? "INFINITE MODE ACTIVE" : "NORMAL MODE ACTIVE";
-        x.fillText(currentModeText, w / 2, y);
-        x.shadowBlur = 0;
-        
-      } else if (rule === "__TOGGLE_SWITCH__") {
-        // Toggle switch design with proper spacing
-        const switchWidth = 200;
-        const switchHeight = 40;
-        const switchX = w / 2;
-        const switchY = y; // Use normal line position for even spacing
-        
-        // Check if mouse is hovering over switch
-        const isSwitchHovering = mx >= switchX - switchWidth/2 && 
-                                 mx <= switchX + switchWidth/2 &&
-                                 my >= switchY - switchHeight/2 && 
-                                 my <= switchY + switchHeight/2;
-        
-        // Draw switch track (background) - darker for better contrast
-        const trackColor = "#1a1a1a";
-        setFill(trackColor);
-        x.fillRect(switchX - switchWidth/2, switchY - switchHeight/2, switchWidth, switchHeight);
-        
-        // Switch track border - brighter for visibility
-        setStroke("#555555");
-        setLineWidth(2);
-        x.strokeRect(switchX - switchWidth/2, switchY - switchHeight/2, switchWidth, switchHeight);
-        
-        // Draw switch button (slides left/right)
-        const buttonWidth = switchWidth / 2 - 6;
-        const buttonHeight = switchHeight - 6;
-        const buttonX = infiniteMode ? 
-          switchX + switchWidth/4 : // Right side for infinite mode
-          switchX - switchWidth/4;  // Left side for normal mode
-        
-        // Better contrast button colors
-        const buttonColor = infiniteMode ? "#cc7700" : "#2a6b63";
-        const hoverButtonColor = isSwitchHovering ? 
-          (infiniteMode ? "#ff9900" : "#3a8b7a") : buttonColor;
-        
-        x.shadowColor = buttonColor;
-        x.shadowBlur = isSwitchHovering ? 12 : 8;
-        setFill(hoverButtonColor);
-        x.fillRect(buttonX - buttonWidth/2, switchY - buttonHeight/2, buttonWidth, buttonHeight);
-        x.shadowBlur = 0;
-        
-        // Switch labels with bold text, letter spacing, and improved contrast
-        x.font = `bold 13px ${FONTS.body}`;
-        
-        // Normal label - white text when active (teal background), black when inactive
-        setFill(infiniteMode ? "#cccccc" : "#ffffff");
-        x.fillText("NORMAL", switchX - switchWidth/4, switchY + 4);
-        
-        // Infinite label - white text when active (orange background), black when inactive
-        setFill(infiniteMode ? "#ffffff" : "#cccccc");
-        x.fillText("INFINITE", switchX + switchWidth/4, switchY + 4);
-        
-        // Store switch bounds for click detection
-        window.helpModeToggle = {
-          x: switchX,
-          y: switchY,
-          width: switchWidth,
-          height: switchHeight
-        };
-        
-      } else if (rule.startsWith("• ")) {
-        // Content bullets - improved readability  
-        setFill("#f0f0f0");
-        x.shadowColor = "rgba(0, 0, 0, 0.4)";
-        x.shadowBlur = 1;
-        x.font = `16px ${FONTS.body}`;
-        x.fillText(rule, w / 2, y);
-        x.shadowBlur = 0;
-        
-      } else if (rule.startsWith("  - ")) {
-        // Sub-bullets with same styling as regular bullets
-        setFill("#f0f0f0");
-        x.shadowColor = "rgba(0, 0, 0, 0.4)";
-        x.shadowBlur = 1;
-        x.font = `16px ${FONTS.body}`;
-        x.fillText(rule, w / 2, y);
-        x.shadowBlur = 0;
-        
-      } else if (rule !== "") {
-        // Description text - balanced contrast
-        setFill("#d0d0d0");
-        x.shadowColor = "rgba(0, 0, 0, 0.3)";
-        x.shadowBlur = 1;
-        x.font = `16px ${FONTS.body}`;
-        x.fillText(rule, w / 2, y);
-        x.shadowBlur = 0;
+      // Skip section breaks (spacing only)
+      if (rule === '__SECTION_BREAK__') {
+        return;
       }
-      // Empty strings create spacing - no rendering needed
+      
+      // Handle structured rule objects
+      if (typeof rule === 'object') {
+        x.textAlign = "left";
+        
+        if (rule.type === 'header') {
+          // Section headers - firefly green
+          setFill("#99ff99");
+          x.shadowColor = "rgba(153, 255, 153, 0.4)";
+          x.shadowBlur = 3;
+          x.font = `bold 20px ${FONTS.body}`;
+          x.fillText(rule.text, leftMargin, y);
+          x.shadowBlur = 0;
+          
+        } else if (rule.type === 'subtitle') {
+          // Subtitle with goal marker - highlighted, less gap after header
+          setFill("#ffd700");
+          x.shadowColor = "rgba(255, 215, 0, 0.5)";
+          x.shadowBlur = 2;
+          x.font = `bold 16px ${FONTS.body}`;
+          x.fillText(rule.text, leftMargin, y);
+          x.shadowBlur = 0;
+          
+        } else if (rule.type === 'item') {
+          const text = rule.text;
+          x.shadowColor = "rgba(0, 0, 0, 0.4)";
+          x.shadowBlur = 1;
+          
+          // Check if it's a sub-item (indented)
+          const isSubItem = text.startsWith('    ');
+          const displayText = isSubItem ? text.trim() : text;
+          const itemMargin = leftMargin + (isSubItem ? 30 : 0);
+          
+          // Parse and render with [input] highlighting
+          const parts = displayText.split(/(\[[^\]]+\])/);
+          let xOffset = itemMargin;
+          
+          parts.forEach(part => {
+            if (part.startsWith('[') && part.endsWith(']')) {
+              // Input key - monospace with box
+              const key = part.slice(1, -1);
+              x.font = `bold 14px monospace`;
+              setFill("#88ddff");
+              const keyWidth = x.measureText(key).width;
+              
+              // Draw subtle box around key with comfortable padding
+              setStroke("rgba(136, 221, 255, 0.3)");
+              setLineWidth(1);
+              x.strokeRect(xOffset - 4, y - 12, keyWidth + 8, 16);
+              
+              x.fillText(key, xOffset, y);
+              xOffset += keyWidth + 10;
+            } else {
+              // Normal text
+              x.font = isSubItem ? `15px ${FONTS.body}` : `16px ${FONTS.body}`;
+              setFill(isSubItem ? "#d0d0d0" : "#f0f0f0");
+              x.fillText(part, xOffset, y);
+              xOffset += x.measureText(part).width;
+            }
+          });
+          
+          x.shadowBlur = 0;
+        }
+      }
     }
   });
   
@@ -5454,6 +6023,7 @@ const drawMainUI = () => {
   
   // === TOP RIGHT: Time ===
   if (startTime && !gameOver && !gameWon) {
+    x.save();
     x.textAlign = "right";
     
     // Calculate elapsed time, excluding time spent in help menu and leaderboard
@@ -5468,104 +6038,151 @@ const drawMainUI = () => {
     // Ensure elapsed is never negative (safety check)
     elapsed = Math.max(0, elapsed);
     
-    // Simple timer logic - dynamic switch based on mode
-    if (infiniteMode) {
-      // Infinite mode: Count up from 0
-      const minutes = Math.floor(elapsed / 60000);
-      const seconds = Math.floor((elapsed % 60000) / 1000);
-      const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      
-      setFill("#88ddff");
-      setFontBySize(20, 'body');
-      x.fillText(timeText, w - 20, 30);
-    } else {
-      // Normal mode: Count down from 3:00
-      const remaining = Math.max(0, NIGHT_DURATION - elapsed);
-      const minutes = Math.floor(remaining / 60000);
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      
-      // Color based on time remaining
-      const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
-      setFill(timeColor);
-      setFontBySize(20, 'body');
-      x.fillText(timeText, w - 20, 30);
-    }
+    // Normal mode: Count down from 3:00
+    const remaining = Math.max(0, NIGHT_DURATION - elapsed);
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    // Color based on time remaining
+    const timeColor = remaining < 60000 ? "#ff8844" : remaining < 180000 ? "#ffaa00" : "#88ddff";
+    setFill(timeColor);
+    x.shadowBlur = 0; // Ensure no shadow pollution
+    setFontBySize(20, 'body');
+    x.fillText(timeText, w - 20, 30);
+    x.restore();
   }
   
-  // === LEFT SIDE: Mana and Shield (aligned with time) ===
+  // === TOP LEFT: Score, Mana, Streak - Modern Game UI ===
+  x.save();
   x.textAlign = "left";
-  let leftY = 30; // Start aligned with time display on right
   
-  if (infiniteMode) {
-    // Infinite mode display
-    setFill("#00dddd");
-    setFontBySize(18, 'body');
-    x.fillText("Mana: ∞", 20, leftY);
-    leftY += 25;
-    
-    setFill("#99ff99");
-    x.fillText("Shield: ∞", 20, leftY);
-    leftY += 25;
+  const uiStartX = 25;
+  const uiStartY = 30;
+  const uiSpacing = 38; // Consistent spacing between elements
+  let currentY = uiStartY;
+  
+  // Calculate if streak is active (for layout purposes)
+  const hasStreak = shieldStreak >= 2;
+  
+  // === NORMAL MODE ===
+  
+  // 1. SCORE (with #1 leaderboard glow)
+  const isTopScore = leaderboardCache && leaderboardCache.length > 0 && score > leaderboardCache[0].score;
+  
+  setFill("rgba(136, 221, 255, 0.9)");
+  setFontBySize(16, 'body');
+  x.fillText("SCORE", uiStartX, currentY);
+  
+  // Score value with special glow if beating #1
+  if (isTopScore) {
+    x.shadowColor = "#ffdd00";
+    x.shadowBlur = 15;
+    setFill("#ffee66"); // Gold glow
   } else {
-    // Normal mode display
-    // Mana display (always show) - use fixed cyan for readability
-    setFill("#00dddd"); // Cyan color for good contrast against dark sky
-    setFontBySize(18, 'body');
-    x.fillText(`Mana: ${Math.floor(manaEnergy)}`, 20, leftY);
-    leftY += 25; // Tighter spacing
+    x.shadowBlur = 0;
+    setFill("#ffffff");
+  }
+  setFontBySize(20, 'body');
+  x.fillText(score.toString(), uiStartX + 70, currentY);
+  x.shadowBlur = 0;
     
-    // Shield status - cache font since all use same size
-    if (shieldActive) {
-      setFill("#99ccff");
-      x.fillText("SHIELD ACTIVE", 20, leftY);
-    } else if (shieldCharging) {
-      // Pulsing yellow to show charging state
-      const chargePulse = sin(Date.now() * 0.01) * 0.3 + 0.7;
-      setFill(`rgba(255, 255, 0, ${chargePulse})`);
-      x.fillText("SHIELD CHARGING...", 20, leftY);
-    } else if (shieldCooldown > 0) {
-      setFill("#cccccc");
-      x.fillText(`Shield: ${Math.ceil(shieldCooldown / 60)}s`, 20, leftY);
-    } else if (summonOverheated || manaEnergy < 5) {
-      setFill("#ff6666");
-      x.fillText(manaEnergy <= 0 ? "OUT OF MANA" : "LOW MANA", 20, leftY);
-    } else {
-      let shieldColor = "#99ff99";
-      let shieldText = "Shield: Ready";
-      
-      if (manaEnergy <= 20) {
-        shieldColor = "#ff9966";
-        shieldText = "Shield: LOW POWER";
-      } else if (manaEnergy <= 5) {
-        shieldColor = "#ff6666";
-        shieldText = "Shield: CRITICAL";
-      }
-      
-      setFill(shieldColor);
-      x.fillText(shieldText, 20, leftY);
-    }
-    leftY += 25; // Tighter spacing
-  }
-  
-  // Streak display (when active) - now below shield
-  if (shieldStreak >= 2) {
-    const streakColor = shieldStreak >= 5 ? "#ffcc99" : "#99ff99";
-    setFill(streakColor);
+    currentY += uiSpacing;
+    
+    // 2. MANA BAR
+    const manaBarWidth = 125;
+    const manaBarHeight = 16;
+    const manaBarX = uiStartX + 70;
+    // Text baseline is at currentY, but visual center of 16px text is ~6px above baseline
+    // Bar center should be at currentY - 6, so bar top is at (currentY - 6) - (16/2) = currentY - 14
+    const manaBarY = currentY - 14;
+    const manaPercent = manaEnergy / 100;
+    const manaFillWidth = manaBarWidth * manaPercent;
+    
+    setFill("rgba(102, 204, 255, 0.9)");
     setFontBySize(16, 'body');
-    x.fillText(`${shieldStreak}x streak (+${Math.floor((Math.min(3, 1 + (shieldStreak - 1) * 0.5) - 1) * 100)}% bonus)`, 20, leftY);
-    leftY += 25;
-  }
+    x.fillText("MANA", uiStartX, currentY);
+    
+    // Mana bar colors based on level
+    let barColor, glowColor, shadowColor;
+    if (manaPercent > 0.5) {
+      barColor = "#2299ff"; glowColor = "#44aaff"; shadowColor = "#1177dd";
+    } else if (manaPercent > 0.2) {
+      barColor = "#22cccc"; glowColor = "#44dddd"; shadowColor = "#11aaaa";
+    } else {
+      barColor = "#cc22cc"; glowColor = "#dd44dd"; shadowColor = "#aa11aa";
+    }
+    
+    // Background
+    x.shadowColor = shadowColor;
+    x.shadowBlur = 12;
+    setFill("rgba(0, 0, 0, 0.5)");
+    x.beginPath();
+    x.moveTo(manaBarX + 8, manaBarY);
+    x.lineTo(manaBarX + manaBarWidth - 8, manaBarY);
+    x.arc(manaBarX + manaBarWidth - 8, manaBarY + manaBarHeight/2, manaBarHeight/2, -Math.PI/2, Math.PI/2);
+    x.lineTo(manaBarX + 8, manaBarY + manaBarHeight);
+    x.arc(manaBarX + 8, manaBarY + manaBarHeight/2, manaBarHeight/2, Math.PI/2, -Math.PI/2);
+    x.closePath();
+    x.fill();
+    
+    // Fill
+    x.shadowBlur = 8;
+    x.shadowColor = glowColor;
+    setFill(barColor);
+    if (manaFillWidth > 16) {
+      // Draw main body as one path to avoid seams
+      x.beginPath();
+      // Left rounded end (semi-circle)
+      x.arc(manaBarX + 8, manaBarY + manaBarHeight/2, (manaBarHeight - 4)/2, Math.PI/2, Math.PI*1.5, false);
+      // Top line
+      x.lineTo(manaBarX + manaFillWidth - 8, manaBarY + 2);
+      // Right rounded end (semi-circle)
+      x.arc(manaBarX + manaFillWidth - 8, manaBarY + manaBarHeight/2, (manaBarHeight - 4)/2, -Math.PI/2, Math.PI/2, false);
+      // Bottom line back
+      x.lineTo(manaBarX + 8, manaBarY + manaBarHeight - 2);
+      x.closePath();
+      x.fill();
+    } else if (manaFillWidth > 8) {
+      // Too small for rectangle, just draw a single rounded shape
+      x.beginPath();
+      x.arc(manaBarX + 8, manaBarY + manaBarHeight/2, (manaBarHeight - 4)/2, 0, TAU);
+      x.fill();
+    }
+    x.shadowBlur = 0;
+    
+    currentY += uiSpacing;
+    
+    // 3. STREAK (inside panel if active)
+    if (hasStreak) {
+      const streakColor = shieldStreak >= 5 ? "#ffaa66" : "#66ff99";
+      setFill("rgba(136, 221, 255, 0.7)");
+      setFontBySize(16, 'body');
+      x.fillText("STREAK", uiStartX, currentY);
+      
+      x.shadowColor = streakColor;
+      x.shadowBlur = 8;
+      setFill(streakColor);
+      setFontBySize(18, 'body');
+      const bonusPercent = Math.floor((Math.min(3, 1 + (shieldStreak - 1) * 0.5) - 1) * 100);
+      x.fillText(`${shieldStreak}× • +${bonusPercent}%`, uiStartX + 85, currentY);
+      x.shadowBlur = 0;
+    }
+  
+  x.restore();
   
 
   
   // === CENTER: Summoning Feedback ===
   if (summonFeedback.active) {
+    x.save();
     const alpha = 1 - (summonFeedback.life / summonFeedback.maxLife);
     setFill(`rgba(255, 255, 255, ${alpha})`);
     x.textAlign = "center";
+    x.shadowBlur = 0;
     setFontBySize(20, 'body');
     x.fillText(summonFeedback.text, w / 2, h / 2 - 150);
+    x.restore();
   }
   
   // === PLAYER CURSOR: Overheat/Heat Warning ===
@@ -5646,74 +6263,88 @@ const drawMainUI = () => {
   }
   
   // === BOTTOM CENTER: Delivery Pressure Timer (Like Rhythm Games) ===
-  // Only show pressure timer in normal mode
-  if (!infiniteMode) {
-    const barWidth = Math.min(w * 0.7, 600);
-    const barHeight = 20;
-    const barX = (w - barWidth) / 2;
-    const barY = h - 70;
-    
-    // Calculate time pressure - how close to curiosity decay (tutorial-aware timing)
-    const timeSinceDelivery = lastDeliveryTime ? (Date.now() - lastDeliveryTime) : (Date.now() - (startTime || Date.now()));
-    const curiosityDeadline = tutorialComplete ? 15000 : 60000; // 60s tutorial, 15s normal
-    const timeUntilDecay = Math.max(0, curiosityDeadline - timeSinceDelivery);
-    const pressurePercent = timeUntilDecay / curiosityDeadline; // 1.0 = safe, 0.0 = critical
-    const fillWidth = barWidth * pressurePercent;
+  const barWidth = Math.min(w * 0.7, 600);
+  const barHeight = 20;
+  const barX = (w - barWidth) / 2;
+  const barY = h - 70;
+  
+  // Calculate time pressure - how close to curiosity decay (tutorial-aware timing)
+  // Pause the timer when help menu is open
+  let timeSinceDelivery;
+  if (showHelp) {
+    // When help is open, subtract the time help has been open from elapsed time
+    timeSinceDelivery = lastDeliveryTime ? (helpOpenTime - lastDeliveryTime) : (helpOpenTime - (startTime || Date.now()));
+  } else {
+    timeSinceDelivery = lastDeliveryTime ? (Date.now() - lastDeliveryTime) : (Date.now() - (startTime || Date.now()));
+  }
+  
+  const curiosityDeadline = tutorialComplete ? 15000 : 60000; // 60s tutorial, 15s normal
+  const timeUntilDecay = Math.max(0, curiosityDeadline - timeSinceDelivery);
+  const pressurePercent = timeUntilDecay / curiosityDeadline; // 1.0 = safe, 0.0 = critical
+  const fillWidth = barWidth * pressurePercent;
   
   // Color based on delivery pressure (traffic light system)
-  let barColor, glowColor, shadowColor, particleColor;
+  let curiosityBarColor, curiosityGlowColor, curiosityShadowColor, particleColor;
   if (pressurePercent > 0.6) {
     // Safe zone - green/emerald
-    barColor = "#22cc44"; glowColor = "#44dd66"; shadowColor = "#11aa33"; particleColor = "#66ff88";
+    curiosityBarColor = "#22cc44"; curiosityGlowColor = "#44dd66"; curiosityShadowColor = "#11aa33"; particleColor = "#66ff88";
   } else if (pressurePercent > 0.3) {
     // Warning zone - yellow/gold
-    barColor = "#cccc22"; glowColor = "#dddd44"; shadowColor = "#aaaa11"; particleColor = "#ffff66";
+    curiosityBarColor = "#cccc22"; curiosityGlowColor = "#dddd44"; curiosityShadowColor = "#aaaa11"; particleColor = "#ffff66";
   } else {
     // Critical zone - red/orange
-    barColor = "#cc4422"; glowColor = "#dd6644"; shadowColor = "#aa2211"; particleColor = "#ff8866";
+    curiosityBarColor = "#cc4422"; curiosityGlowColor = "#dd6644"; curiosityShadowColor = "#aa2211"; particleColor = "#ff8866";
   }
   
   x.save();
   
   // Ethereal background glow with rounded corners
-  x.shadowColor = shadowColor;
+  x.shadowColor = curiosityShadowColor;
   x.shadowBlur = 25;
   setFill("rgba(0, 0, 0, 0.2)");
-  // Simulate rounded rectangle with overlapping circles
-  x.fillRect(barX + 10, barY, barWidth - 20, barHeight);
+  // Draw as single rounded rectangle path
   x.beginPath();
-  x.arc(barX + 10, barY + barHeight/2, barHeight/2, 0, TAU);
-  x.arc(barX + barWidth - 10, barY + barHeight/2, barHeight/2, 0, TAU);
+  x.moveTo(barX + 10, barY);
+  x.lineTo(barX + barWidth - 10, barY);
+  x.arc(barX + barWidth - 10, barY + barHeight/2, barHeight/2, -Math.PI/2, Math.PI/2);
+  x.lineTo(barX + 10, barY + barHeight);
+  x.arc(barX + 10, barY + barHeight/2, barHeight/2, Math.PI/2, -Math.PI/2);
+  x.closePath();
   x.fill();
   
   // Main bar with rounded ends
   x.shadowBlur = 15;
-  x.shadowColor = glowColor;
-  setFill(barColor);
+  x.shadowColor = curiosityGlowColor;
+  setFill(curiosityBarColor);
   
-  if (fillWidth > 10) {
-    // Main rectangle
-    x.fillRect(barX + 10, barY + 2, Math.max(0, fillWidth - 20), barHeight - 4);
-    // Left rounded end
+  if (fillWidth > 20) {
+    // Draw main body as one path to avoid seams
+    x.beginPath();
+    // Left rounded end (semi-circle)
+    x.arc(barX + 10, barY + barHeight/2, (barHeight - 4)/2, Math.PI/2, Math.PI*1.5, false);
+    // Top line
+    x.lineTo(barX + fillWidth - 10, barY + 2);
+    // Right rounded end (semi-circle)
+    x.arc(barX + fillWidth - 10, barY + barHeight/2, (barHeight - 4)/2, -Math.PI/2, Math.PI/2, false);
+    // Bottom line back
+    x.lineTo(barX + 10, barY + barHeight - 2);
+    x.closePath();
+    x.fill();
+  } else if (fillWidth > 10) {
+    // Too small for rectangle, just draw a single rounded shape
     x.beginPath();
     x.arc(barX + 10, barY + barHeight/2, (barHeight - 4)/2, 0, TAU);
     x.fill();
-    // Right rounded end (only if bar is long enough)
-    if (fillWidth > 20) {
-      x.beginPath();
-      x.arc(barX + fillWidth - 10, barY + barHeight/2, (barHeight - 4)/2, 0, TAU);
-      x.fill();
-    }
   }
   
   // Inner flowing gradient
   if (fillWidth > 15) {
     const flowOffset = sin(Date.now() * 0.003) * 0.3;
     const gradient = x.createLinearGradient(barX, barY, barX + fillWidth, barY);
-    gradient.addColorStop(0, `${glowColor}66`);
-    gradient.addColorStop(0.3 + flowOffset, `${glowColor}99`);
-    gradient.addColorStop(0.7 + flowOffset, `${glowColor}44`);
-    gradient.addColorStop(1, `${glowColor}77`);
+    gradient.addColorStop(0, `${curiosityGlowColor}66`);
+    gradient.addColorStop(0.3 + flowOffset, `${curiosityGlowColor}99`);
+    gradient.addColorStop(0.7 + flowOffset, `${curiosityGlowColor}44`);
+    gradient.addColorStop(1, `${curiosityGlowColor}77`);
     x.fillStyle = gradient;
     
     x.fillRect(barX + 10, barY + 4, Math.max(0, fillWidth - 20), barHeight - 8);
@@ -5738,28 +6369,32 @@ const drawMainUI = () => {
   x.fillText(`${secondsLeft}s`, barX + barWidth/2, barY + barHeight/2 + 5);
   x.restore();
   
-  // Label with more buffer and dimmer text
+  // Static "Curiosity" label - matches cat eye color
   x.save();
   x.shadowColor = "rgba(0, 0, 0, 0.5)";
   x.shadowBlur = 3;
   x.textAlign = "center";
-  const labelColor = pressurePercent > 0.6 ? "rgba(100, 255, 150, 0.85)" :
-                    pressurePercent > 0.3 ? "rgba(255, 255, 100, 0.85)" :
-                    "rgba(255, 150, 100, 0.85)";
-  setFill(labelColor);
+  
+  // Map cat eye color to curiosity text color
+  let curiosityColor;
+  if (catEyeColor === "pink") {
+    curiosityColor = "rgba(255, 100, 180, 0.9)"; // Bright pink
+  } else if (catEyeColor === "purple") {
+    curiosityColor = "rgba(180, 100, 255, 0.9)"; // Bright purple
+  } else { // gold
+    curiosityColor = "rgba(255, 200, 80, 0.9)"; // Bright gold
+  }
+  
+  setFill(curiosityColor);
   setTitleFont(18); // Use proper font helper
-  const labelText = pressurePercent > 0.6 ? "Deliver Soon" :
-                   pressurePercent > 0.3 ? "Hurry!" : "CRITICAL!";
-  x.fillText(labelText, barX + barWidth/2, barY - 15);
+  x.fillText("Curiosity", barX + barWidth/2, barY - 15);
   x.restore();
-  } // End infinite mode check
 
   // === BOTTOM RIGHT: Controls hint ===
   x.textAlign = "right";
   setFill("#666666");
   x.font = `14px ${FONTS.body}`;
-  const modeIndicator = infiniteMode ? " • Infinite Mode" : "";
-  x.fillText(`'ESC' help • 'L' leaderboard • 'M' audio: ${audioEnabled ? 'ON' : 'OFF'}${modeIndicator}`, w - 20, h - 20);
+  x.fillText(`'ESC' help • 'L' leaderboard • 'M' audio: ${audioEnabled ? 'ON' : 'OFF'}`, w - 20, h - 20);
   
   x.restore();
 };
@@ -5813,8 +6448,8 @@ function gameLoop(currentTime) {
       fadeBgMusic(0.25, 2); // Boost music volume for celebration
     }
     
-    // Nyx's Curiosity Decay - the core risk mechanic (only in normal mode)
-    if (!infiniteMode && !gameOver && !gameWon && startTime) {
+    // Nyx's Curiosity Decay - the core risk mechanic
+    if (!gameOver && !gameWon && startTime) {
       const timeSinceLastDelivery = Date.now() - (lastDeliveryTime || startTime);
       
       // During tutorial, use much longer curiosity timer (60 seconds vs 15)
@@ -5849,28 +6484,36 @@ function gameLoop(currentTime) {
       const baseSpawnInterval = Math.max(1500, 4000 - (minutesPlayed * 500));
       const spawnInterval = baseSpawnInterval / (1 + shieldStreak * 0.1); // Streaks make it harder
       
-      // Set firefly cap based on mode
-      const maxFireflies = infiniteMode ? 18 : CFG.maxFireflies; // Cap at 18 for infinite mode
-      
-      if (now - lastSpawnTime > spawnInterval && otherFireflies.length < maxFireflies) {
+      if (now - lastSpawnTime > spawnInterval && otherFireflies.length < CFG.maxFireflies) {
         spawnFirefly();
         lastSpawnTime = now;
         
-        // Chance for bonus firefly at higher difficulties (only in normal mode)
-        if (!infiniteMode && minutesPlayed > 2 && r() < minutesPlayed * 0.05) {
+        // Chance for bonus firefly at higher difficulties
+        if (minutesPlayed > 2 && r() < minutesPlayed * 0.05) {
           spawnFirefly();
         }
       }
       
-      // Emergency Firefly Surge - when population gets dangerously low
+      // Minimum Firefly Population - ALWAYS maintain at least 5 fireflies
+      const minimumFireflies = 5;
+      if (otherFireflies.length < minimumFireflies) {
+        // Spawn enough to reach minimum (but not all at once to avoid jarring appearance)
+        const needed = minimumFireflies - otherFireflies.length;
+        const toSpawn = Math.min(needed, 2); // Spawn max 2 per frame for smooth appearance
+        for (let i = 0; i < toSpawn; i++) {
+          spawnFirefly();
+        }
+      }
+      
+      // Emergency Firefly Surge - additional spawning for tutorial or low-mana situations
       if (otherFireflies.length <= 5 && !tutorialComplete) {
-        // During tutorial, always maintain at least 8 fireflies
-        for (let i = 0; i < 4; i++) {
+        // During tutorial, maintain at least 8 fireflies (above the global minimum)
+        for (let i = 0; i < 3; i++) {
           spawnFirefly();
         }
       } else if (otherFireflies.length <= 8 && tutorialComplete && manaEnergy < 50) {
         // After tutorial, surge when low on both fireflies and mana
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 3; i++) {
           spawnFirefly();
         }
       }
@@ -5901,6 +6544,14 @@ function gameLoop(currentTime) {
   if (starTwinkleTimer > 0) {
     starTwinkleTimer = Math.max(0, starTwinkleTimer - 1);
   }
+  
+  // Update angry cat timer
+  if (catAngryTimer > 0) {
+    catAngryTimer = Math.max(0, catAngryTimer - 1);
+    if (catAngryTimer <= 0) {
+      catAngryActive = false;
+    }
+  }
 
   // Render with optimizations - skip background when overlays are active
   const renderOptimized = showHelp || gameOver || gameWon || showLeaderboard || showNameInput;
@@ -5923,20 +6574,30 @@ function gameLoop(currentTime) {
   
   // Unified screen flash effect during cat eye warnings with audio cues
   if (gameStarted && !gameOver && colorChangesEnabled && isCurrentlyFlashing()) {
-    if (otherFireflies.some(f => f.captured)) {
-      const flashIntensity = 0.15;
-      setFill(`rgba(200, 80, 80, ${flashIntensity})`);
-      x.fillRect(0, 0, w, h);
-      
-      // Mario Kart style countdown audio cues (3-2-1) synchronized with flashes
-      if (warningFlashState.flashFrame === 1) { // Play sound on first frame of each flash
-        if (warningFlashState.currentFlash === 1) {
-          playTone(440, 0.1, 0.03); // A4 - first warning (3)
-        } else if (warningFlashState.currentFlash === 2) {
-          playTone(554, 0.1, 0.03); // C#5 - second warning (2) 
-        } else if (warningFlashState.currentFlash === 3) {
-          playTone(659, 0.1, 0.03); // E5 - final warning (1)
-        }
+    // Always show screen flash when eyes are flashing (consistent visual feedback)
+    const hasTargets = otherFireflies.some(f => f.captured);
+    
+    // Escalating flash colors: white → orange-white → red-white
+    let flashColor, flashIntensity;
+    if (warningFlashState.currentFlash === 1) {
+      flashColor = 'rgba(255, 255, 255, 0.10)'; // White
+    } else if (warningFlashState.currentFlash === 2) {
+      flashColor = 'rgba(255, 220, 180, 0.12)'; // Orange-white
+    } else if (warningFlashState.currentFlash === 3) {
+      flashColor = 'rgba(255, 200, 180, 0.15)'; // Red-white (strongest)
+    }
+    
+    setFill(flashColor);
+    x.fillRect(0, 0, w, h);
+    
+    // Enhanced audio cues with escalating intensity - only play if there are targets
+    if (hasTargets && warningFlashState.flashFrame === 1) { // Play sound on first frame of each flash
+      if (warningFlashState.currentFlash === 1) {
+        playTone(440, 0.1, 0.03); // A4 - first warning
+      } else if (warningFlashState.currentFlash === 2) {
+        playTone(554, 0.12, 0.03); // C#5 - building tension
+      } else if (warningFlashState.currentFlash === 3) {
+        playTone(880, 0.15, 0.04); // A5 - octave jump for critical moment
       }
     }
   }
@@ -5953,6 +6614,18 @@ function gameLoop(currentTime) {
     x.fillRect(0, 0, w, h);
     shieldSuccessFlash--;
   }
+  
+  // Draw claw marks attack feedback (drawn over screen flashes)
+  drawClawMarks();
+  
+  // Draw shield outline effect for successful shields
+  drawShieldOutline();
+  
+  // Draw rainbow glitter effect for perfect shields
+  drawRainbowGlitter();
+  
+  // Draw shield outline effect for successful shields
+  drawShieldOutline();
   
   // UI and overlays
   drawMainUI();

@@ -16,7 +16,7 @@ This is an **addictive clicker game** with a 3-minute survival challenge:
 2. **Move to collect** them around your character  
 3. **Watch the delivery pressure timer** - green bar at bottom shows time until curiosity decay
 4. **Deliver to Nyx** before the timer turns red (15 second deadline)
-5. **Shield timing** - when her eyes flash, activate shield to protect fireflies
+5. **Shield timing** - Any active shield (with mana) prevents attacks; better timing = better evolution
 6. **Build delivery streaks** - consecutive deliveries multiply your score, but streaks break on failure!
 
 ### Firefly Evolution & Scoring
@@ -25,13 +25,15 @@ This is an **addictive clicker game** with a 3-minute survival challenge:
 - **Gold**: 25 points, fast (evolved twice)
 - **Rainbow**: 40 points, very fast (maximum evolution, high risk/reward)
 
+**Pro Strategy**: Drop evolved fireflies before shielding, then recollect to re-evolve them for rainbow tier!
+
 **Victory**: Curiosity above -50 for 3 minutes + 1000 completion bonus + (streak × 50)
 
 ## Controls
 
 - **Mouse Movement**: Guide Lampyris and collect fireflies
-- **Click/Spacebar (Rapid)**: Summon fireflies - click rapidly for more! (costs bioluminescence/mana)
-- **Hold (Click/Spacebar)**: Activate protective shield (costs bioluminescence/mana)
+- **Click/Spacebar (Rapid)**: Summon fireflies - click rapidly for more! (costs mana)
+- **Hold (Click/Spacebar)**: Activate protective shield (costs mana)
 - **Right-Click/X Key**: Drop captured fireflies with temporary immunity (strategic for evolved fireflies)
 - **ESC**: Show/hide help menu
 - **M**: Toggle audio on/off
@@ -44,9 +46,14 @@ This is an **addictive clicker game** with a 3-minute survival challenge:
   - Red: Critical zone (<5 seconds)
 - **Streak System**: Consecutive deliveries build score multipliers up to 300% - but fail once and lose it all!
 - **Curiosity System**: Nyx's interest decays without deliveries. Reach -50 = game over  
-- **Perfect Timing**: White flash = shield protects ALL fireflies, good timing saves most
-- **Strategic Risk/Reward**: Wait for more fireflies vs deliver safely before deadline
-- **Bioluminescence (Mana) Management**: Summoning costs energy, only overheats when completely empty
+- **Shield Mechanics**: 
+  - 3 colored flashes are WARNINGS - the attack comes AFTER the 3rd flash
+  - Any active shield (with mana) = NO claw marks, NO attack damage
+  - Better timing = better rewards: 3rd flash (PERFECT) > 2nd flash (GREAT) > 1st flash (GOOD)
+  - PERFECT: all fireflies protected AND evolved | GREAT: 75% evolve | GOOD: 50% evolve
+  - No shield or no mana = claw marks appear + fireflies flee/revert
+- **Mana Management**: Summoning and shielding cost mana. Recover mana by delivering fireflies to Nyx
+- **Strategic Risk/Reward**: Drop evolved fireflies before shielding to recollect and re-evolve for max points
 - **Dynamic Difficulty**: Nyx's gaze shifts become quicker over time
 
 ## Technical Details
