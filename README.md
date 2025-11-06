@@ -1,5 +1,10 @@
 # Nyx Felis & Lampyris
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/t/aftongauntlett/js13k-2025)](https://github.com/aftongauntlett/js13k-2025/commits/main)
+[![Submission](https://img.shields.io/badge/submission-12.5KB-brightgreen.svg)](#)
+[![Enhanced](https://img.shields.io/badge/enhanced-22KB-blue.svg)](#)
+
 A timing-based firefly collector built in vanilla JavaScript for js13kGames 2025. Guide fireflies, master shield timing, and keep Nyx Felis curious long enough to survive the night.
 
 **[Play Enhanced Version →](https://nyx-felis.aftongauntlett.com/)** | **[Post-Mortem →](https://www.aftongauntlett.com/blog/js13k-2025-post-mortem)**
