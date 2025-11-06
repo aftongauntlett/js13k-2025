@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/t/aftongauntlett/js13k-2025)](https://github.com/aftongauntlett/js13k-2025/commits/main)
+[![js13k](https://img.shields.io/badge/js13k-2025-orange.svg)](https://js13kgames.com/)
 [![Submission](https://img.shields.io/badge/submission-12.5KB-brightgreen.svg)](#)
 [![Enhanced](https://img.shields.io/badge/enhanced-22KB-blue.svg)](#)
 
