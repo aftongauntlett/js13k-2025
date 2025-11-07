@@ -12,7 +12,7 @@ A timing-based firefly collector built in vanilla JavaScript for js13kGames 2025
 
 **Tech Stack**: Vanilla JS • Canvas 2D • Web Audio API • Roadroller • Firebase
 
-*See also: [Orbital Order](https://github.com/aftongauntlett/orbital-order) for my other js13kGames entry.*
+*See also: [Orbital Order](https://github.com/aftongauntlett/js13k-demo) for my other js13kGames entry.*
 
 ---
 
