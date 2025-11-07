@@ -102,4 +102,4 @@ npm run size       # Check against 13,312 byte limit
 
 ## License
 
-MIT License. Built by [Afton Gauntlett](https://github.com/aftongauntlett).
+MIT License. Built by [Afton Gauntlett](https://www.aftongauntlett.com/).
