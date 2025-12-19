@@ -14,8 +14,6 @@ A timing-based firefly collector built in vanilla JavaScript for js13kGames 2025
 
 *See also: [Orbital Order](https://github.com/aftongauntlett/js13k-demo) for my other js13kGames entry.*
 
----
-
 ## Motivation
 
 JS13k's strict size constraints force decisions and keep scope tight. I wanted to build a small game and finish it.
@@ -24,13 +22,9 @@ The theme was **Black Cats**, which made me happy because I love cats. Fireflies
 
 The game shifted from a "cozy screensaver" to something with structure when I added the curiosity bar and shield mechanic. Constraints forced choices and kept ideas from sprawling.
 
----
-
 ## Game Overview
 
 **Core Loop**: Summon fireflies, collect them, shield at the right moment to evolve them, then deliver to keep Nyx Felis curious. Evolution chain progresses through four tiers: Green → Purple → Gold → Rainbow. Perfect shield timing on the third warning flash grants 100% evolution and protection. Survive for 3 minutes to win.
-
----
 
 ## Architecture
 
