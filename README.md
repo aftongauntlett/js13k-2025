@@ -59,8 +59,6 @@ npm run build      # Full build pipeline
 npm run size       # Check against 13,312 byte limit
 ```
 
----
-
 ## UX & Accessibility
 
 - **Three-flash warning system**: Third flash signals optimal shield moment
@@ -69,8 +67,6 @@ npm run size       # Check against 13,312 byte limit
 - **Task-based tutorial**: Learn by doing, not reading
 - **Responsive feedback**: Score popups, shield outlines, particle bursts confirm actions
 - **60fps target**: Maintained with hundreds of particles on modern hardware
-
----
 
 ## Challenges & Lessons Learned
 
@@ -84,15 +80,11 @@ npm run size       # Check against 13,312 byte limit
 
 **Missed Deadline**: Mixed up CST and CT. Finished enhanced version anyway. Learned to keep scope tight and move on.
 
----
-
 ## Next Steps
 
 - Try Unity for future game projects
 - Potentially rebuild one of these js13kGames concepts
 - Stars and sparkles will probably show up
-
----
 
 ## License
 
