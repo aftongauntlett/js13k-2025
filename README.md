@@ -8,7 +8,7 @@
 
 A timing-based firefly collector built in vanilla JavaScript for js13kGames 2025. Guide fireflies, master shield timing, and keep Nyx Felis curious long enough to survive the night.
 
-**[Play Enhanced Version →](https://nyx-felis.aftongauntlett.com/)** | **[Post-Mortem →](https://www.aftongauntlett.com/blog/js13k-2025-post-mortem)**
+**[Play Enhanced Version →](https://nyx-felis.aftongauntlett.com/)** 
 
 **Tech Stack**: Vanilla JS • Canvas 2D • Web Audio API • Roadroller • Firebase
 
